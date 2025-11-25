@@ -2,22 +2,27 @@ import numpy as np
 import json
 from datetime import datetime
 import logging
+import os
 
-# Randomized prediction and automatic air quality alerts
+#randomized prediction and automatic air quality alerts
 
-# Configure alerts log
+#configure alerts log
+LOG_DIR = "./data"  # carpeta local dentro de W1
+os.makedirs(LOG_DIR, exist_ok=True)  # crea la carpeta si no existe
+
 logging.basicConfig(
-    filename="../../data/alerts.log",
+    filename=os.path.join(LOG_DIR, "alerts.log"),
     level=logging.INFO,
     format="%(message)s",
     encoding="utf-8"
 )
 
-# Alert thresholds - EPA Standards (US)
+#alert thresholds - EPA Standards (US)
 THRESHOLDS = {
     "PM25": 35.0,   # µg/m³ - EPA 24h standard
     "NO2": 100.0    # µg/m³ - EPA 1h standard
 }
+
 
 def predict_from_series(series, sims=500):
     """Predicts future values using random simulations."""
@@ -31,6 +36,7 @@ def predict_from_series(series, sims=500):
         noise = np.random.normal(0, np.std(bs) * 0.05)
         samples.append(np.mean(bs) + noise)
     return float(np.mean(samples))
+
 
 def predict_sensor(hash_module, sensor_id):
     """Predicts PM25 and NO2 for a sensor using recent data."""
@@ -46,15 +52,17 @@ def predict_sensor(hash_module, sensor_id):
         "NO2_pred": predict_from_series(no2_series)
     }
 
+
 def check_and_alert(hash_module, sensor_id):
     """Generates alert if predictions exceed limits."""
     pred = predict_sensor(hash_module, sensor_id)
     if not pred:
         return None
+
     alerts = []
     for contaminant, limit in THRESHOLDS.items():
-        value = pred[f"{contaminant}_pred"]
-        if value and value > limit:
+        value = pred.get(f"{contaminant}_pred")
+        if value is not None and value > limit:
             alert = {
                 "sensor_id": sensor_id,
                 "contaminant": contaminant,
@@ -65,6 +73,7 @@ def check_and_alert(hash_module, sensor_id):
             logging.info(json.dumps(alert, ensure_ascii=False))
             alerts.append(alert)
     return alerts if alerts else None
+
 
 def run_all_and_alert(hash_module):
     """Runs predictions and alerts for all sensors."""
