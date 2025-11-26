@@ -9,6 +9,11 @@ from hash_table import HashTable
 from prediction import run_all_and_alert
 from w2_pipeline import run_w2_from_records
 
+#base paths relative to project root
+base_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(base_dir))
+DATA_PATH = os.path.join(project_root, "data", "sensor_data_clean.json")
+
 st.set_page_config(
     page_title="Real-Time Air Quality Monitoring",
     layout="wide",
@@ -18,7 +23,7 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
     html, body, [class*="css"]  {
         font-family: 'Inter', sans-serif;
@@ -49,8 +54,6 @@ st.markdown(
 )
 
 #load data
-DATA_PATH = "./data/sensor_data_clean.json"
-
 ht = HashTable()
 if os.path.exists(DATA_PATH):
     ht.load_json(DATA_PATH)
@@ -60,6 +63,7 @@ else:
 
 #converter
 records = ht.all_records
+
 
 def records_to_dataframe(records_list):
     rows = []
@@ -76,6 +80,7 @@ def records_to_dataframe(records_list):
     if "timestamp" in df.columns:
         df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
     return df
+
 
 df = records_to_dataframe(records)
 
@@ -119,13 +124,13 @@ with col2:
     st.subheader("PM2.5 (global)")
     pm = global_stats.get("PM25", {})
     st.metric("Promedio", f"{pm.get('avg'):.2f}" if pm.get("avg") is not None else "N/D")
-    st.metric("Máximo", f"{pm.get("max"):.2f}" if pm.get("max") is not None else "N/D")
+    st.metric("Máximo", f"{pm.get('max'):.2f}" if pm.get("max") is not None else "N/D")
 
 with col3:
     st.subheader("NO2 (global)")
     no2 = global_stats.get("NO2", {})
-    st.metric("Promedio", f"{no2.get("avg"):.2f}" if no2.get("avg") is not None else "N/D")
-    st.metric("Máximo", f"{no2.get("max"):.2f}" if no2.get("max") is not None else "N/D")
+    st.metric("Promedio", f"{no2.get('avg'):.2f}" if no2.get("avg") is not None else "N/D")
+    st.metric("Máximo", f"{no2.get('max'):.2f}" if no2.get("max") is not None else "N/D")
 
 st.markdown("---")
 
@@ -214,12 +219,22 @@ if st.button("Ejecutar análisis avanzado (W2)"):
     if moment1_by_city:
         moment1_rows = []
         for city, info in moment1_by_city.items():
+            if isinstance(info, dict):
+                count_critical = info.get("count_critical", 0)
+                total_readings = info.get("total_readings", 0)
+                critical_ratio = info.get("critical_ratio", 0.0)
+            else:
+                count_critical = int(info)
+                total_readings = 0
+                critical_ratio = 0.0
+
             moment1_rows.append({
                 "Ciudad": city,
-                "Alertas críticas": info.get("count_critical", 0),
-                "Total lecturas": info.get("total_readings", 0),
-                "Proporción crítica": info.get("critical_ratio", 0.0),
+                "Alertas críticas": count_critical,
+                "Total lecturas": total_readings,
+                "Proporción crítica": critical_ratio,
             })
+
         moment1_df = pd.DataFrame(moment1_rows)
         st.write("Frecuencia de alertas críticas por ciudad (Momento 1):")
         st.dataframe(
@@ -228,17 +243,26 @@ if st.button("Ejecutar análisis avanzado (W2)"):
             height=250
         )
 
+
     #top zones
     top_zones = w2_result.get("top_zones", [])
     if top_zones:
         top_rows = []
         for item in top_zones:
-            zone = item.get("zone")
-            freq = item.get("frequency", 0)
+            if isinstance(item, dict):
+                zone = item.get("zone")
+                freq = item.get("frequency", 0)
+            elif isinstance(item, (tuple, list)) and len(item) >= 2:
+                zone = item[0]
+                freq = item[1]
+            else:
+                continue
+
             top_rows.append({
                 "Zona": zone,
                 "Frecuencia crítica": freq,
             })
+
         top_df = pd.DataFrame(top_rows)
         st.write("Zonas con mayor frecuencia de eventos críticos:")
         st.dataframe(
@@ -246,6 +270,7 @@ if st.button("Ejecutar análisis avanzado (W2)"):
             use_container_width=True,
             height=250
         )
+
 
     #dgim metrics
     dgim_last_100 = w2_result.get("dgim_last_100")
@@ -255,9 +280,9 @@ if st.button("Ejecutar análisis avanzado (W2)"):
 
     st.write("DGIM - estimación de lecturas críticas en las últimas 100 posiciones:")
     st.write(f"aproximado: {dgim_last_100} | exacto: {dgim_exact_last_100}")
-    st.write("tendencia detectada (dgim):")
+    st.write("tendencia detectada (DGIM):")
     st.write(dgim_trend)
-    st.write("predicción próxima ventana (dgim):")
+    st.write("predicción próxima ventana (DGIM):")
     st.write(dgim_prediction)
 
     #adaptive sampling stats
