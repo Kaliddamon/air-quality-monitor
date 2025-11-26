@@ -1,232 +1,166 @@
-import json
-from collections import defaultdict
-from datetime import datetime
-
+import re
+import random
+import pprint
 
 class HashTable:
-    def __init__(self):
-        self.by_reading_id = {}
-        self.by_sensor = defaultdict(list)
-        self.all_records = []
-        self.sensor_key_field = None
+    def __init__(self, capacity=8):
+        self._capacity = capacity if capacity >= 8 else 8
+        self._buckets = [[] for _ in range(self._capacity)]
+        self._size = 0
 
-    #helpers
-    def _choose_sensor_key_field(self, rec):
-        if self.sensor_key_field:
-            return
-        if 'sensorId' in rec:
-            self.sensor_key_field = 'sensorId'
-        elif 'sensorLocation' in rec:
-            self.sensor_key_field = 'sensorLocation'
+    # --- Detección y hash para ObjectId (hex 24 chars) ---
+    def _is_objectid(self, key):
+        return isinstance(key, str) and len(key) == 24 and re.fullmatch(r"[0-9a-fA-F]{24}", key) is not None
 
-    def _ensure_numeric_aq(self, rec):
-        aq = rec.get('airQualityData') or {}
+    def _hash_objectid(self, key):
+        try:
+            return int(key, 16) % self._capacity
+        except Exception:
+            return self._hash_string(key)
 
-        def _to_float(x):
-            try:
-                return float(x)
-            except Exception:
-                return None
+    # --- FNV-1a simple para strings ---
+    def _hash_string(self, key):
+        if not isinstance(key, str):
+            key = str(key)
+        fnv_offset = 14695981039346656037
+        fnv_prime = 1099511628211
+        h = fnv_offset
+        # iterar por bytes
+        for b in key.encode('utf-8'):
+            h ^= b
+            h = (h * fnv_prime) & 0xFFFFFFFFFFFFFFFF
+        return h % self._capacity
 
-        if isinstance(aq, dict):
-            aq['PM25'] = _to_float(aq.get('PM25'))
-            aq['NO2'] = _to_float(aq.get('NO2'))
-            rec['airQualityData'] = aq
+    def _bucket_index(self, key):
+        if self._is_objectid(key):
+            return self._hash_objectid(key)
+        return self._hash_string(key)
 
-    def _parse_ts(self, rec):
-        ts = rec.get('timestamp')
-        if not ts:
-            return None
-        if isinstance(ts, datetime):
-            return ts
+    # --- Operaciones básicas ---
+    def insert(self, key, value):
+        idx = self._bucket_index(key)
+        bucket = self._buckets[idx]
+        for i, pair in enumerate(bucket):
+            if pair[0] == key:
+                bucket[i] = (key, value)
+                return
+        bucket.append((key, value))
+        self._size += 1
+        if self.load_factor() > 0.75:
+            self._resize(self._capacity * 2)
 
-        for fmt in ("%Y-%m-%dT%H:%M:%SZ",
-                    "%Y-%m-%dT%H:%M:%S.%fZ",
-                    "%Y-%m-%dT%H:%M:%S %z",
-                    "%Y-%m-%dT%H:%M:%S"):
-            try:
-                return datetime.strptime(ts, fmt)
-            except Exception:
-                continue
-        return None
+    def get(self, key, default=None):
+        idx = self._bucket_index(key)
+        bucket = self._buckets[idx]
+        for k, v in bucket:
+            if k == key:
+                return v
+        return default
 
-    #basic operations
-    def insert(self, record):
-        if not isinstance(record, dict):
-            raise TypeError('record must be a dict')
+    def delete(self, key):
+        idx = self._bucket_index(key)
+        bucket = self._buckets[idx]
+        for i, (k, v) in enumerate(bucket):
+            if k == key:
+                bucket.pop(i)
+                self._size -= 1
+                if self._capacity > 8 and self.load_factor() < 0.2:
+                    self._resize(max(8, self._capacity // 2))
+                return True
+        return False
 
-        self._ensure_numeric_aq(record)
-        self._choose_sensor_key_field(record)
-
-        rid = record.get('_id')
-        if rid is not None:
-            self.by_reading_id[str(rid)] = record
-
-        key_field = self.sensor_key_field or 'sensorLocation'
-        sensor_id = record.get(key_field)
-        if sensor_id is not None:
-            self.by_sensor[str(sensor_id)].append(record)
-
-        self.all_records.append(record)
-
-    def load_json(self, path, encoding='utf-8'):
-        with open(path, 'r', encoding=encoding) as f:
-            data = json.load(f)
-
-        if not isinstance(data, list):
-            raise ValueError('JSON root must be a list')
-
-        inserted = 0
-        for rec in data:
-            try:
-                self.insert(rec)
-                inserted += 1
-            except Exception:
-                continue
-
-        return inserted
-
-    def search(self, key):
-        return self.by_reading_id.get(str(key))
-
-    def update(self, key, new_values):
-        rec = self.by_reading_id.get(str(key))
-        if not rec:
-            return 0
-
-        rec.update(new_values)
-
-        if 'airQualityData' in new_values:
-            self._ensure_numeric_aq(rec)
-
-        return 1
-
-    def stats(self):
-        return {
-            'total_records': len(self.all_records),
-            'unique_sensors': len(self.by_sensor),
-            'unique_readings': len(self.by_reading_id)
-        }
-
-    def get_city_aggregates(self):
-        city = {}
-        for rec in self.all_records:
-            loc = rec.get('sensorLocation')
-            if not loc:
-                continue
-
-            aq = rec.get('airQualityData', {}) or {}
-            pm = aq.get('PM25')
-            no2 = aq.get('NO2')
-
-            e = city.setdefault(loc, {
-                'count': 0,
-                'sum_PM25': 0.0,
-                'sum_NO2': 0.0,
-                'min_PM25': None,
-                'max_PM25': None,
-                'min_NO2': None,
-                'max_NO2': None,
-            })
-
-            e['count'] += 1
-
-            if pm is not None:
-                e['sum_PM25'] += pm
-                e['min_PM25'] = pm if e['min_PM25'] is None else min(e['min_PM25'], pm)
-                e['max_PM25'] = pm if e['max_PM25'] is None else max(e['max_PM25'], pm)
-
-            if no2 is not None:
-                e['sum_NO2'] += no2
-                e['min_NO2'] = no2 if e['min_NO2'] is None else min(e['min_NO2'], no2)
-                e['max_NO2'] = no2 if e['max_NO2'] is None else max(e['max_NO2'], no2)
-
-        for loc, e in city.items():
-            cnt = e['count']
-            e['avg_PM25'] = (e['sum_PM25'] / cnt) if cnt else None
-            e['avg_NO2'] = (e['sum_NO2'] / cnt) if cnt else None
-
-        return city
-
-    def rank_cities_by_pollutant(self, pollutant='PM25', top_n=None, descending=True):
-        aggs = self.get_city_aggregates()
-        key = f'avg_{pollutant}'
-        items = [(city, vals.get(key)) for city, vals in aggs.items() if vals.get(key) is not None]
-        items.sort(key=lambda x: x[1], reverse=descending)
-        return items[:top_n] if top_n else items
-
-    def detect_outliers(self, thresholds=None):
-        if thresholds is None:
-            thresholds = {'PM25': 35.0, 'NO2': 200.0}
-
-        out = []
-        for rec in self.all_records:
-            aq = rec.get('airQualityData', {}) or {}
-            exceeded = {}
-
-            for pollutant, thr in thresholds.items():
-                val = aq.get(pollutant)
-                if val and val > thr:
-                    exceeded[pollutant] = {
-                        'value': val,
-                        'threshold': thr,
-                        'excess': val - thr
-                    }
-
-            if exceeded:
-                out.append((rec, exceeded))
-
-        return out
-
-    def global_stats(self):
-        sums = {'PM25': 0.0, 'NO2': 0.0}
-        mins = {'PM25': None, 'NO2': None}
-        maxs = {'PM25': None, 'NO2': None}
-        counts = {'PM25': 0, 'NO2': 0}
-
-        for rec in self.all_records:
-            aq = rec.get('airQualityData', {}) or {}
-            for pollutant in ('PM25', 'NO2'):
-                val = aq.get(pollutant)
-                if val is None:
-                    continue
-                counts[pollutant] += 1
-                sums[pollutant] += val
-                mins[pollutant] = val if mins[pollutant] is None else min(mins[pollutant], val)
-                maxs[pollutant] = val if maxs[pollutant] is None else max(maxs[pollutant], val)
-
-        result = {}
-        for pollutant in ('PM25', 'NO2'):
-            cnt = counts[pollutant]
-            result[pollutant] = {
-                'count': cnt,
-                'min': mins[pollutant] if cnt else None,
-                'max': maxs[pollutant] if cnt else None,
-                'avg': (sums[pollutant] / cnt) if cnt else None,
-            }
-
+    def keys(self):
+        result = []
+        for bucket in self._buckets:
+            for k, _ in bucket:
+                result.append(k)
         return result
 
-    def get_all_sensor_ids(self):
-        return list(self.by_sensor.keys())
+    def values(self):
+        result = []
+        for bucket in self._buckets:
+            for _, v in bucket:
+                result.append(v)
+        return result
 
-    def get_sensor_records(self, sensor_id):
-        recs = list(self.by_sensor.get(str(sensor_id), []))
+    def items(self):
+        result = []
+        for bucket in self._buckets:
+            for k, v in bucket:
+                result.append((k, v))
+        return result
 
-        def _key_ts(r):
-            ts = r.get('timestamp')
-            if isinstance(ts, str):
-                try:
-                    return datetime.fromisoformat(ts.replace('Z', '+00:00'))
-                except Exception:
-                    return None
-            if isinstance(ts, datetime):
-                return ts
-            return None
+    def __len__(self):
+        return self._size
 
-        try:
-            recs.sort(key=lambda r: _key_ts(r) or datetime.min)
-        except Exception:
-            pass
+    def capacity(self):
+        return self._capacity
 
-        return recs
+    def load_factor(self):
+        return float(self._size) / float(self._capacity)
+
+    def _resize(self, new_capacity):
+        old_items = self.items()
+        self._capacity = new_capacity if new_capacity >= 8 else 8
+        self._buckets = [[] for _ in range(self._capacity)]
+        self._size = 0
+        for k, v in old_items:
+            self.insert(k, v)
+
+    def __repr__(self):
+        return "<HashTable size={} capacity={} load_factor={:.3f}>".format(self._size, self._capacity, self.load_factor())
+
+
+# --------------------------
+# Ejemplo de uso con la estructura dada (simulada).
+def make_mock_doc(_id, city, pm25, no2, timestamp):
+    return {
+        "_id": _id,
+        "sensorLocation": city,
+        "airQualityData": {"PM25": "{:.2f}".format(pm25), "NO2": "{:.2f}".format(no2)},
+        "timestamp": timestamp
+    }
+
+# Crear índices
+index_by_id = HashTable()
+index_by_city = HashTable()
+
+docs = [
+    make_mock_doc("5f1d7f7a9e1b8b3a6f0a1c2d", "Madrid", 12.34, 20.5, "2025-11-24T08:00:00 +0000"),
+    make_mock_doc("5f1d7f7a9e1b8b3a6f0a1c2e", "Bogota", 45.12, 30.01, "2025-11-24T09:00:00 +0000"),
+    make_mock_doc("5f1d7f7a9e1b8b3a6f0a1c2f", "Madrid", 55.00, 10.00, "2025-11-24T09:05:00 +0000"),
+]
+
+# Insertar documentos en ambos índices
+for d in docs:
+    # Índice por _id (único)
+    index_by_id.insert(d["_id"], d)
+    # Índice por ciudad (almacenar lista de documentos)
+    city = d["sensorLocation"]
+    existing = index_by_city.get(city)
+    if existing is None:
+        index_by_city.insert(city, [d])
+    else:
+        existing.append(d)
+        index_by_city.insert(city, existing)
+
+print("Estado índice por _id:", index_by_id)
+print("Estado índice por ciudad:", index_by_city)
+
+print("\nBuscar por _id (primer doc):")
+pprint.pprint(index_by_id.get("5f1d7f7a9e1b8b3a6f0a1c2d"))
+
+print("\nBuscar por ciudad 'Madrid' (lista de docs):")
+pprint.pprint(index_by_city.get("Madrid"))
+
+# Forzar más inserciones para generar colisiones y redimensionamiento
+for i in range(30):
+    cid = "City-{}".format(i % 7)
+    doc = make_mock_doc("{:024x}".format(random.randrange(1<<60))[:24], cid, random.random()*100, random.random()*50, "2025-11-24T10:00:00 +0000")
+    lst = index_by_city.get(cid) or []
+    lst.append(doc)
+    index_by_city.insert(cid, lst)
+
+print("\nDespués de inserciones adicionales:")
+print(index_by_city)
+print("Keys en índice por ciudad (muestra):", index_by_city.keys()[:12], "... (total", len(index_by_city.keys()), ")")
