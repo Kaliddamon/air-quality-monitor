@@ -7,6 +7,7 @@ import pandas as pd
 
 from hash_table import HashTable
 from prediction import run_all_and_alert
+from w2_pipeline import run_w2_from_records
 
 st.set_page_config(
     page_title="Real-Time Air Quality Monitoring",
@@ -17,7 +18,7 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;display=swap');
 
     html, body, [class*="css"]  {
         font-family: 'Inter', sans-serif;
@@ -118,13 +119,13 @@ with col2:
     st.subheader("PM2.5 (global)")
     pm = global_stats.get("PM25", {})
     st.metric("Promedio", f"{pm.get('avg'):.2f}" if pm.get("avg") is not None else "N/D")
-    st.metric("Máximo", f"{pm.get('max'):.2f}" if pm.get("max") is not None else "N/D")
+    st.metric("Máximo", f"{pm.get("max"):.2f}" if pm.get("max") is not None else "N/D")
 
 with col3:
     st.subheader("NO2 (global)")
     no2 = global_stats.get("NO2", {})
-    st.metric("Promedio", f"{no2.get('avg'):.2f}" if no2.get("avg") is not None else "N/D")
-    st.metric("Máximo", f"{no2.get('max'):.2f}" if no2.get("max") is not None else "N/D")
+    st.metric("Promedio", f"{no2.get("avg"):.2f}" if no2.get("avg") is not None else "N/D")
+    st.metric("Máximo", f"{no2.get("max"):.2f}" if no2.get("max") is not None else "N/D")
 
 st.markdown("---")
 
@@ -195,3 +196,72 @@ if st.button("Ejecutar predicciones y generar alertas"):
         )
     else:
         st.write("No se generaron alertas con las condiciones actuales.")
+
+st.markdown("---")
+
+#w2analysis
+st.subheader("Análisis probabilístico W2")
+
+if st.button("Ejecutar análisis avanzado (W2)"):
+    w2_result = run_w2_from_records(records)
+
+    #distinct events estimate
+    distinct_events = w2_result.get("distinct_events_estimate", 0)
+    st.write(f"Estimación de eventos de contaminación distintos: {distinct_events}")
+
+    #moment 1 by city (critical alerts)
+    moment1_by_city = w2_result.get("moment1_by_city", {})
+    if moment1_by_city:
+        moment1_rows = []
+        for city, info in moment1_by_city.items():
+            moment1_rows.append({
+                "Ciudad": city,
+                "Alertas críticas": info.get("count_critical", 0),
+                "Total lecturas": info.get("total_readings", 0),
+                "Proporción crítica": info.get("critical_ratio", 0.0),
+            })
+        moment1_df = pd.DataFrame(moment1_rows)
+        st.write("Frecuencia de alertas críticas por ciudad (Momento 1):")
+        st.dataframe(
+            moment1_df,
+            use_container_width=True,
+            height=250
+        )
+
+    #top zones
+    top_zones = w2_result.get("top_zones", [])
+    if top_zones:
+        top_rows = []
+        for item in top_zones:
+            zone = item.get("zone")
+            freq = item.get("frequency", 0)
+            top_rows.append({
+                "Zona": zone,
+                "Frecuencia crítica": freq,
+            })
+        top_df = pd.DataFrame(top_rows)
+        st.write("Zonas con mayor frecuencia de eventos críticos:")
+        st.dataframe(
+            top_df,
+            use_container_width=True,
+            height=250
+        )
+
+    #dgim metrics
+    dgim_last_100 = w2_result.get("dgim_last_100")
+    dgim_exact_last_100 = w2_result.get("dgim_exact_last_100")
+    dgim_trend = w2_result.get("dgim_trend")
+    dgim_prediction = w2_result.get("dgim_prediction")
+
+    st.write("DGIM - estimación de lecturas críticas en las últimas 100 posiciones:")
+    st.write(f"aproximado: {dgim_last_100} | exacto: {dgim_exact_last_100}")
+    st.write("tendencia detectada (dgim):")
+    st.write(dgim_trend)
+    st.write("predicción próxima ventana (dgim):")
+    st.write(dgim_prediction)
+
+    #adaptive sampling stats
+    sampling_stats = w2_result.get("sampling_stats", {})
+    if sampling_stats:
+        st.write("Resumen de muestreo adaptativo:")
+        st.json(sampling_stats)
