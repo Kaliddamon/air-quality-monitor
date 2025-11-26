@@ -1,10 +1,18 @@
-from probabilistic_structures import BloomFilter, FMEstimator
-from adaptive_sampling import (
+import os
+import sys
+
+#add src folder to sys.path so workshop2 can be imported
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if base_dir not in sys.path:
+    sys.path.append(base_dir)
+
+from workshop2.probabilistic_structures import BloomFilter, FMEstimator
+from workshop2.adaptive_sampling import (
     AdaptiveSampler,
     FrequencyMomentsAnalyzer,
     process_stream_with_adaptive_sampling,
 )
-from stream_analysis import StreamAnalyzer
+from workshop2.stream_analysis import StreamAnalyzer
 
 
 def build_w2_structures(records):
