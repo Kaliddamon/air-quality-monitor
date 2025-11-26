@@ -1,3 +1,20 @@
+def add_next_day_pollution(sensors, seed=999):
+    random.seed(seed)
+    for s in sensors:
+        base = mean_vector(s["pollutionLevels7"])
+        # ruido proporcional a la media (5% std), más efecto de fuente/vento
+        noise = random.gauss(0, base * 0.05)
+        wind = s["weatherInfluence"]["windSpeed"]
+        wind_effect = - (wind / 30.0) * random.uniform(0, base * 0.03)  # viento reduce algo
+        source = s["pollutionSource"]
+        source_effect = 0.0
+        if source == "industrial":
+            source_effect = random.uniform(0, base * 0.04)
+        elif source == "traffic":
+            source_effect = random.uniform(0, base * 0.02)
+        next_day = max(0.0, base + noise + wind_effect + source_effect)
+        s["nextDayPollution"] = round(next_day, 2)
+
 def mae(values_true, values_pred):
     n = len(values_true)
     if n == 0:
@@ -145,3 +162,4 @@ def test_geo_distance_effect(sensors, k=5, thresholds=[5,15,30,60], selection_me
             "n_points": len(true_vals)
         })
     return out
+
