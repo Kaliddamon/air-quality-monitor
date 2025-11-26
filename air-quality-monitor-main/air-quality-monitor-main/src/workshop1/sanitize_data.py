@@ -3,8 +3,11 @@ import os
 import random
 from datetime import datetime, timedelta
 
-input_path = "sensor_data.json"
-output_dir = "data"
+#base paths relative to project root
+base_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(base_dir))
+input_path = os.path.join(project_root, "data", "sensor_data.json")
+output_dir = os.path.join(project_root, "data")
 output_path = os.path.join(output_dir, "sensor_data_clean.json")
 
 
@@ -63,4 +66,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
