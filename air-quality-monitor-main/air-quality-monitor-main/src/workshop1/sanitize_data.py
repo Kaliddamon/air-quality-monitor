@@ -38,7 +38,7 @@ def main():
                 val = aq.get(key)
                 try:
                     aq[key] = float(val)
-                except (typeerror, valueerror):
+                except (TypeError, ValueError):
                     aq[key] = None
             rec["airQualityData"] = aq
         else:
@@ -63,3 +63,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
