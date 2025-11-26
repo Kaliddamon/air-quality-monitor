@@ -113,11 +113,12 @@ class HashTable:
 
 # --------------------------
 # Ejemplo de uso con la estructura dada (simulada).
+
 def make_mock_doc(_id, city, pm25, no2, timestamp):
     return {
         "_id": _id,
         "sensorLocation": city,
-        "airQualityData": {"PM25": "{:.2f}".format(pm25), "NO2": "{:.2f}".format(no2)},
+        "airQualityData": {"PM25": pm25, "NO2": no2},
         "timestamp": timestamp
     }
 
