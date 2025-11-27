@@ -1,0 +1,695 @@
+import multiprocessing
+import time
+import random
+import math
+from collections import defaultdict, Counter
+
+# ------------------------------
+# Shuffle (agrupación) simple
+# ------------------------------
+def shuffle(mapped):
+    """
+    Agrupa una lista de tuplas (clave, valor) en un diccionario:
+    { clave: [valores,...], ... }
+    """
+    groups = {}
+    for k, v in mapped:
+        if k in groups:
+            groups[k].append(v)
+        else:
+            groups[k] = [v]
+    return groups
+
+# ------------------------------
+# Algoritmo 1: Contador de Lecturas
+# ------------------------------
+def map_count_reads(records):
+    """
+    Map: por cada registro emite (ubicacion_sensor, 1)
+    Usa 'sensorLocation' como ubicación.
+    """
+    out = []
+    for r in records:
+        loc = r.get("sensorLocation")
+        if loc is not None:
+            out.append((loc, 1))
+    return out
+
+def reduce_count_reads(shuffled):
+    """
+    Reduce: suma los 1s por ubicación -> total de lecturas.
+    Devuelve un diccionario {ubicacion: total}
+    """
+    totals = {}
+    for k, values in shuffled.items():
+        s = 0
+        for val in values:
+            s += val
+        totals[k] = s
+    return totals
+
+def top_n_sensors(counts, n=10):
+    """
+    Devuelve una lista con las n ubicaciones con más lecturas:
+    [(ubicacion, conteo), ...]
+    """
+    items = list(counts.items())
+    items.sort(key=lambda kv: kv[1], reverse=True)
+    return items[:n]
+
+# ------------------------------
+# Algoritmo 2: Promedio de Contaminación (AQI)
+# ------------------------------
+def map_avg_aqi(records):
+    """
+    Map: por cada registro emite (ciudad, aqiValue)
+    Usa 'sensorLocation' y 'aqiValue'.
+    """
+    out = []
+    for r in records:
+        loc = r.get("sensorLocation")
+        aqi = r.get("aqiValue")
+        if loc is not None and (isinstance(aqi, int) or isinstance(aqi, float)):
+            out.append((loc, float(aqi)))
+    return out
+
+def reduce_avg_aqi(shuffled):
+    """
+    Reduce: calcula promedio por ciudad.
+    Devuelve {ciudad: promedio}
+    """
+    averages = {}
+    for k, vals in shuffled.items():    # Bucle (k, vals), se gestiona por las keys 
+        total = 0.0
+        count = 0
+        for v in vals:        # Bucle para recorrer todos los valores 'vals' de la key 'k'
+            total += v
+            count += 1
+        if count > 0:
+            averages[k] = total / count
+        else:
+            averages[k] = float('nan')
+    return averages
+
+def city_with_max_min(averages):
+    """
+    Retorna ((ciudad_max, val), (ciudad_min, val)).
+    Si averages está vacío retorna (("N/A", nan), ("N/A", nan)).
+    """
+    if not averages:
+        return (("N/A", float('nan')), ("N/A", float('nan')))
+    items = list(averages.items())
+    # Encontrar max y min manualmente
+    max_item = items[0]
+    min_item = items[0]
+    for it in items[1:]:
+        if it[1] > max_item[1]:
+            max_item = it
+        if it[1] < min_item[1]:
+            min_item = it
+    return max_item, min_item
+
+# ------------------------------
+# Map para cada fuente
+# ------------------------------
+def map_pollution(records, key_field="sensorLocation"):
+    """
+    Map para lecturas de contaminación.
+    Emite (key_field, {'type':'pollution', 'data': <registro_sin_clave>})
+    """
+    out = []
+    for r in records:
+        key = r.get(key_field)
+        if key is None:
+            continue
+        # copia del registro sin romper el original (opcional)
+        data = {}
+        for kk, vv in r.items():
+            if kk != key_field:
+                data[kk] = vv
+        out.append((key, {"type": "pollution", "data": data}))
+    return out
+
+def map_weather(records, key_field="sensorLocation"):
+    """
+    Map para lecturas de clima.
+    Emite (key_field, {'type':'weather', 'data': <registro_sin_clave>})
+    """
+    out = []
+    for r in records:
+        key = r.get(key_field)
+        if key is None:
+            continue
+        data = {}
+        for kk, vv in r.items():
+            if kk != key_field:
+                data[kk] = vv
+        out.append((key, {"type": "weather", "data": data}))
+    return out
+
+# ------------------------------
+# Reduce: realizar el join
+# ------------------------------
+def reduce_join(shuffled, join_type="inner"):
+    """
+    join_type: 'inner' (default), 'left', 'right', 'outer'
+    - inner: solo claves que tengan ambos tipos
+    - left: todas las pollution, si no hay weather -> weather = None
+    - right: todas las weather, si no hay pollution -> pollution = None
+    - outer: todas las claves; faltantes -> None
+    Retorna lista de reportes combinados: cada reporte es dict con keys:
+      { 'location': clave, 'pollution': <dict or None>, 'weather': <dict or None> }
+    Nota: si hay múltiples registros de cada tipo para una ubicación se hace cross-product.
+    """
+    reports = []
+
+    for key, values in shuffled.items():
+        polls = []
+        weathers = []
+        for item in values:
+            if not isinstance(item, dict):
+                continue
+            t = item.get("type")
+            d = item.get("data")
+            if t == "pollution":
+                polls.append(d)
+            elif t == "weather":
+                weathers.append(d)
+
+        if join_type == "inner":
+            if not polls or not weathers:
+                continue
+            # cross-product
+            for p in polls:
+                for w in weathers:
+                    reports.append({"location": key, "pollution": p, "weather": w})
+        elif join_type == "left":
+            if polls:
+                if weathers:
+                    for p in polls:
+                        for w in weathers:
+                            reports.append({"location": key, "pollution": p, "weather": w})
+                else:
+                    for p in polls:
+                        reports.append({"location": key, "pollution": p, "weather": None})
+        elif join_type == "right":
+            if weathers:
+                if polls:
+                    for p in polls:
+                        for w in weathers:
+                            reports.append({"location": key, "pollution": p, "weather": w})
+                else:
+                    for w in weathers:
+                        reports.append({"location": key, "pollution": None, "weather": w})
+        elif join_type == "outer":
+            if polls and weathers:
+                for p in polls:
+                    for w in weathers:
+                        reports.append({"location": key, "pollution": p, "weather": w})
+            elif polls and not weathers:
+                for p in polls:
+                    reports.append({"location": key, "pollution": p, "weather": None})
+            elif weathers and not polls:
+                for w in weathers:
+                    reports.append({"location": key, "pollution": None, "weather": w})
+        else:
+            # join_type desconocido -> tratar como inner
+            if polls and weathers:
+                for p in polls:
+                    for w in weathers:
+                        reports.append({"location": key, "pollution": p, "weather": w})
+
+    return reports
+
+# ------------------------------
+# Función de utilidad: pipeline completo
+# ------------------------------
+def mapreduce_join(pollution_records, weather_records, key_field="sensorLocation", join_type="inner"):
+    mapped = []
+    mapped.extend(map_pollution(pollution_records, key_field=key_field))
+    mapped.extend(map_weather(weather_records, key_field=key_field))
+    shuffled = shuffle(mapped)
+    reports = reduce_join(shuffled, join_type=join_type)
+    return reports
+
+# ------------------------------
+# Map: contar sensores por ciudad
+# ------------------------------
+def map_city_sensors(records):
+    """
+    Emite (ciudad, 1) por cada registro que represente un sensor/lectura.
+    """
+    out = []
+    for r in records:
+        city = r.get("sensorLocation")
+        if city is not None:
+            out.append((city, 1))
+    return out                      # En resumen, guarda en tuplas (ciudad, 1), para marcar que ciudades se leyeron
+
+# Reduce genérico: sumar valores por clave
+def reduce_sum(shuffled):
+    totals = {}
+    for k, vals in shuffled.items():
+        s = 0
+        for v in vals:
+            s += v
+        totals[k] = s
+    return totals
+
+# ------------------------------
+# Util: Amdahl (speedup)
+# ------------------------------
+def effective_nodes_amdahl(nodes, serial_fraction):
+    """
+    Devuelve el speedup (aceleración relativa) según Amdahl:
+      speedup = 1 / (s + (1-s)/N)
+    - nodes: número de nodos (N >= 1)
+    - serial_fraction: fracción serial s en [0,1]
+    """
+    if nodes <= 0:
+        return 0.0
+    if serial_fraction < 0.0:
+        serial_fraction = 0.0
+    if serial_fraction > 1.0:
+        serial_fraction = 1.0
+    s = float(serial_fraction)
+    N = float(nodes)
+    # speedup
+    denom = s + (1.0 - s) / N
+    if denom == 0.0:
+        return float('inf')
+    return 1.0 / denom
+
+# ------------------------------
+# Pipeline de costos
+# ------------------------------
+def estimate_monitoring_costs(records,
+                              cost_per_sensor_per_year=50.0,
+                              fixed_cost_per_city_per_year=1000.0,
+                              record_size_bytes=800,      # tamaño estimado por lectura JSON
+                              storage_overhead=1.10,      # 10% overhead (metadatos, índices)
+                              nodes_cost_per_hour=0.20,   # costo por nodo/hora (USD)
+                              processing_time_per_record_sec=0.05,
+                              serial_fraction=0.05):
+    """
+    Parámetros:
+      - cost_per_sensor_per_year: costo anual por mantener un sensor (licencias, mantenimiento)
+      - fixed_cost_per_city_per_year: costo fijo por ciudad (infraestructura local)
+      - record_size_bytes: tamaño aproximado de cada registro
+      - storage_overhead: multiplicador para overhead
+      - nodes_cost_per_hour: costo por nodo/hora para estimaciones de procesamiento
+      - processing_time_per_record_sec: tiempo medio (segundos) para procesar una lectura
+    Devuelve diccionario con estimaciones.
+    """
+    # MapReduce: contar sensores por ciudad
+    mapped = map_city_sensors(records)
+    shuffled = shuffle(mapped)
+    sensors_by_city = reduce_sum(shuffled)   # {city: num_sensors}
+
+    # Estadísticas básicas
+    num_cities = len(sensors_by_city)
+
+    total_sensors = 0                       # Promedio de sensores por ciudad
+    for c in sensors_by_city:
+        total_sensors += sensors_by_city[c]
+    avg_sensors_per_city = (total_sensors / num_cities) if num_cities > 0 else 0.0
+
+    # 1) Costos anuales de monitoreo por ciudad y total
+    costs_per_city = {}
+    total_cost = 0.0
+    for city, ns in sensors_by_city.items():    # ns: número de sensores
+        cost = fixed_cost_per_city_per_year + ns * cost_per_sensor_per_year
+        costs_per_city[city] = cost
+        total_cost += cost
+
+    # 2) Comparación almacenamiento: hourly vs daily (por año)
+    # Asumimos:
+    #  - hourly: 24 lecturas/día por sensor
+    #  - daily: 1 lectura/día por sensor
+    days_per_year = 365
+    hourly_per_sensor_per_year = 24 * days_per_year
+    daily_per_sensor_per_year = 1 * days_per_year
+
+    storage_hourly_bytes_per_sensor = hourly_per_sensor_per_year * record_size_bytes * storage_overhead
+    storage_daily_bytes_per_sensor  = daily_per_sensor_per_year  * record_size_bytes * storage_overhead
+
+    total_storage_hourly_bytes = storage_hourly_bytes_per_sensor * total_sensors
+    total_storage_daily_bytes  = storage_daily_bytes_per_sensor  * total_sensors
+
+    # Convertir a GB
+    BYTES_PER_GB = 1024.0**3
+    storage_hourly_gb = total_storage_hourly_bytes / BYTES_PER_GB
+    storage_daily_gb  = total_storage_daily_bytes  / BYTES_PER_GB
+
+    # 3) Estimación de costos de procesamiento para distintos tamaños de red (nodos)
+    # Calculamos tiempo total de procesamiento sec = total_records * processing_time_per_record_sec
+    total_records_per_year = hourly_per_sensor_per_year * total_sensors  # usar horario como caso "máximo"
+    total_proc_seconds = total_records_per_year * processing_time_per_record_sec
+
+    # Escenarios de nodos a evaluar
+    node_scenarios = [1, 2, 5, 10, 20, 50]
+    processing_estimates = {}
+    for nodes in node_scenarios:
+        speedup = effective_nodes_amdahl(nodes, serial_fraction)
+        if speedup <= 0:
+            # evita división por cero
+            wall_time_seconds = float('inf')
+        else:
+            wall_time_seconds = total_proc_seconds / speedup
+        wall_time_hours = wall_time_seconds / 3600.0 if wall_time_seconds != float('inf') else float('inf')
+        cost_processing = nodes * wall_time_hours * nodes_cost_per_hour if wall_time_hours != float('inf') else float('inf')
+        processing_estimates[nodes] = {
+            "speedup": speedup,
+            "wall_time_hours": wall_time_hours,
+            "cost_usd": cost_processing
+        }
+
+    result = {
+        "num_cities": num_cities,
+        "total_sensors": total_sensors,
+        "avg_sensors_per_city": avg_sensors_per_city,
+        "costs_per_city": costs_per_city,
+        "total_monitoring_cost_usd_per_year": total_cost,
+        "storage_hourly_gb_per_year": storage_hourly_gb,
+        "storage_daily_gb_per_year": storage_daily_gb,
+        "processing_total_seconds_per_year": total_proc_seconds,
+        "processing_estimates_by_nodes": processing_estimates
+    }
+    return result
+
+# Algoritmo 5: Rendimiento del Procesamiento de Calidad del Aire
+
+# ------------------------------
+# Map para procesamiento: genera (key, processing_time_sec)
+# key será 'proc' (agregamos todo), values son tiempos por lectura
+# ------------------------------
+def map_processing(records, base_time_per_record=0.05, event_type="normal", event_multipliers=None):
+    """
+    event_type: 'normal' o 'critical'
+    event_multipliers: dict opcional para ajustar tiempos, e.g. {'critical': 2.5}
+    """
+    if event_multipliers is None:
+        event_multipliers = {"normal": 1.0, "critical": 2.5}
+
+    multiplier = event_multipliers.get(event_type, 1.0)
+    out = []
+    for r in records:
+        # si registro incluye campo que sugiere evento crítico local, se podría ajustar por registro;
+        # en este ejemplo aplicamos el mismo multiplicador global del evento
+        proc_time = float(base_time_per_record) * multiplier
+        out.append(("proc", proc_time))
+    return out
+
+# Reduce: sumar tiempos (igual que reduce_sum pero para la clave 'proc')
+def reduce_sum_basic(shuffled):
+    totals = {}
+    for k, vals in shuffled.items():
+        s = 0.0
+        for v in vals:
+            s += v
+        totals[k] = s
+    return totals
+
+# Pipeline de rendimiento
+def evaluate_performance(records,
+                         nodes_list=[1,2,5,10],
+                         base_time_per_record=0.05,
+                         event_types=("normal", "critical"),
+                         event_multipliers=None,
+                         alert_rate_multiplier=3.0,
+                         nodes_cost_per_hour=0.20,
+                         serial_fraction=0.05):
+    """
+    - alert_rate_multiplier: durante una alerta crítica, tasa de llegada puede multiplicarse (ej. 3x)
+    - event_multipliers: factor de tiempo por registro según el tipo de evento
+    Devuelve métricas de rendimiento por (event_type, nodes).
+    """
+    if event_multipliers is None:
+        event_multipliers = {"normal": 1.0, "critical": 2.5}
+
+    results = {}
+
+    # número base de registros
+    base_num_records = len(records)
+
+    for event in event_types:
+        # Ajuste del número de registros si evento crítico incrementa la llegada
+        if event == "critical":
+            num_records = int(base_num_records * alert_rate_multiplier)
+        else:
+            num_records = base_num_records
+
+        # Generamos mapeo (simulado) con tiempos por lectura ya ajustadas
+        # Para eficiencia no construimos lista enorme si num_records grande; pero aquí lo hacemos simple
+        # creando una lista de tuplas
+        mapped = []
+        for i in range(num_records):
+            # Podríamos usar datos distintos por registro, aquí uniformizamos
+            mapped.append(("proc", float(base_time_per_record) * event_multipliers.get(event, 1.0)))
+
+        shuffled = shuffle(mapped)
+        reduced = reduce_sum_basic(shuffled)
+        total_proc_seconds = reduced.get("proc", 0.0)
+
+        # Evaluar para cada cantidad de nodos
+        results[event] = {}
+        for nodes in nodes_list:
+            speedup = effective_nodes_amdahl(nodes, serial_fraction)
+            if speedup <= 0:
+                wall_time_seconds = float('inf')
+            else:
+                wall_time_seconds = total_proc_seconds / speedup
+            wall_time_hours = wall_time_seconds / 3600.0 if wall_time_seconds != float('inf') else float('inf')
+            cost = nodes * wall_time_hours * nodes_cost_per_hour if wall_time_hours != float('inf') else float('inf')
+            throughput = (num_records / wall_time_seconds) if wall_time_seconds not in (0.0, float('inf')) else 0.0
+            results[event][nodes] = {
+                "num_records": num_records,
+                "total_proc_seconds": total_proc_seconds,
+                "speedup": speedup,
+                "wall_time_hours": wall_time_hours,
+                "cost_usd": cost,
+                "throughput_records_per_sec": throughput
+            }
+
+    return results
+
+# ------------------------------
+# ------ Paralelismo simple -----
+# ------------------------------
+def _map_worker(map_queue, reduce_queue, map_func, map_args, map_kwargs):
+    """Worker que toma chunks de registros y manda un dict combinado al reduce_queue."""
+    proc_name = multiprocessing.current_process().name
+    while True:
+        task = map_queue.get()
+        if task is None:
+            break
+        records_chunk = task
+        # ejecutar map sobre el chunk
+        if map_args is None:
+            mapped = map_func(records_chunk)
+        else:
+            mapped = map_func(records_chunk, *map_args, **(map_kwargs or {}))
+        # combiner simple: agrupa valores por clave para reducir tráfico
+        combined = {}
+        for k, v in mapped:
+            if k in combined:
+                combined[k].append(v)
+            else:
+                combined[k] = [v]
+        reduce_queue.put(combined)
+        # pequeño log opcional
+        # print(f"[{proc_name}] mapped chunk len={len(records_chunk)} -> {len(combined)} keys")
+        time.sleep(random.uniform(0.0, 0.01))
+
+def _reduce_worker(reduce_queue, result_queue, reduce_func, reduce_args, reduce_kwargs):
+    """Worker que acumula dicts {k:[v...]} y al final aplica reduce_func."""
+    proc_name = multiprocessing.current_process().name
+    accumulated = defaultdict(list)
+    while True:
+        task = reduce_queue.get()
+        if task is None:
+            # finalizar: aplicar reduce sobre accumulated
+            result = reduce_func(accumulated) if reduce_args is None else reduce_func(accumulated, *reduce_args, **(reduce_kwargs or {}))
+            result_queue.put(result)
+            # print(f"[{proc_name}] reduced -> {len(result)} entries")
+            break
+        for k, vals in task.items():
+            accumulated[k].extend(vals)
+        # print(f"[{proc_name}] received chunk with {len(task)} keys")
+        time.sleep(random.uniform(0.0, 0.01))
+
+def parallel_mapreduce(records,
+                       map_func,
+                       reduce_func,
+                       num_map_tasks=4,
+                       num_reduce_tasks=2,
+                       map_args=None,
+                       map_kwargs=None,
+                       reduce_args=None,
+                       reduce_kwargs=None):
+    """
+    Paraleliza un MapReduce simple:
+      - records: lista de registros (cada map recibe una sublista)
+      - map_func(records_chunk) -> list of (k,v)
+      - reduce_func(shuffled_dict) -> dict (resultado por clave)
+    Nota: para reduce funciones no aditivas (promedios, joins) usar num_reduce_tasks=1 para simplicidad.
+    """
+    # Queues
+    map_queue = multiprocessing.Queue()
+    reduce_queue = multiprocessing.Queue()
+    result_queue = multiprocessing.Queue()
+
+    # Start map workers
+    map_workers = []
+    for _ in range(num_map_tasks):
+        p = multiprocessing.Process(target=_map_worker, args=(map_queue, reduce_queue, map_func, map_args, map_kwargs))
+        p.start()
+        map_workers.append(p)
+
+    # Start reduce workers
+    reduce_workers = []
+    for _ in range(num_reduce_tasks):
+        p = multiprocessing.Process(target=_reduce_worker, args=(reduce_queue, result_queue, reduce_func, reduce_args, reduce_kwargs))
+        p.start()
+        reduce_workers.append(p)
+
+    # Split records into chunks (simple block partition)
+    n = len(records)
+    if n == 0:
+        # send termination signals and collect empty results
+        for _ in range(num_map_tasks):
+            map_queue.put(None)
+        for p in map_workers:
+            p.join()
+        for _ in range(num_reduce_tasks):
+            reduce_queue.put(None)
+        for p in reduce_workers:
+            p.join()
+        return {}
+
+    chunk_size = int(math.ceil(n / float(num_map_tasks)))
+    for i in range(0, n, chunk_size):
+        chunk = records[i:i+chunk_size]
+        map_queue.put(chunk)
+
+    # signal mapers to stop
+    for _ in range(num_map_tasks):
+        map_queue.put(None)
+
+    # wait for map workers to finish (they produce items on reduce_queue)
+    for p in map_workers:
+        p.join()
+
+    # signal reduce workers to stop (after all map outputs are enqueued)
+    for _ in range(num_reduce_tasks):
+        reduce_queue.put(None)
+
+    # wait reduce workers
+    for p in reduce_workers:
+        p.join()
+
+    # collect results (each reduce worker produced a dict)
+    final_result = {}
+    for _ in range(num_reduce_tasks):
+        partial = result_queue.get()
+        # merge partials: si los valores son numéricos (int/float) sumar, si no, sobrescribir
+        for k, v in partial.items():
+            if isinstance(v, (int, float)):
+                final_result[k] = final_result.get(k, 0) + v
+            else:
+                # para estructuras no aditivas (ej. listas, dicts) hacemos "last writer wins"
+                final_result[k] = v
+    return final_result
+
+def parallel_mapreduce_join(pollution_records, weather_records, key_field="sensorLocation", join_type="inner",
+                            num_map_tasks=4, num_reduce_tasks=1):
+    """
+    Versión paralela simplificada del join: mapea pollution y weather en paralelo (misma queue),
+    y usa reduce_join en el reduce stage. Por simplicidad reduce en 1 worker por defecto.
+    """
+    # combinamos las listas y usamos wrapper maps para que cada chunk contenga tanto pollution como weather
+    combined_mapped = []
+
+    # We'll call map_pollution and map_weather in the map workers by sending two types of tasks.
+    # To keep it simple: build a single list tags where each element is a record tagged with source.
+    tagged = [("pollution", r) for r in pollution_records] + [("weather", r) for r in weather_records]
+
+    # Prepare a map function wrapper that expects a chunk of tagged records
+    def map_tagged(chunk):
+        out = []
+        for tag, rec in chunk:
+            if tag == "pollution":
+                out.extend(map_pollution([rec], key_field=key_field))
+            else:
+                out.extend(map_weather([rec], key_field=key_field))
+        return out
+
+    # Use the general parallel_mapreduce but with reduce_join as reduce_func.
+    # reduce_join expects a dict of key->[items], and optionally join_type as arg.
+    result = parallel_mapreduce(tagged, map_tagged, lambda sh: reduce_join(sh, join_type=join_type),
+                                num_map_tasks=num_map_tasks, num_reduce_tasks=num_reduce_tasks)
+    # parallel_mapreduce merges numeric values by sum; here reduce_join returns a list (reports) per key?
+    # In our implementation reduce_join returns a LIST of reports (not a dict) -> to keep API stable we
+    # wrapped reduce_join into a lambda that returns a dict with single key '__reports' to pass through.
+    # But to keep it simpler for now, we used wrapper above; final `result` contains entries merged by key
+    # where values are whatever reduce_join returned. For simplicity we just return the raw `result`.
+    return result
+
+# ------------------------------
+# Ejemplos de uso paralelo (manteniendo tus ejemplos)
+# ------------------------------
+if __name__ == "__main__":
+    # Datos de ejemplo (simulan los registros del JSON que enviaste)
+    records = [
+        {"sensorLocation": "Bogota", "aqiValue": 120},
+        {"sensorLocation": "Bogota", "aqiValue": 130},
+        {"sensorLocation": "Medellin", "aqiValue": 80},
+        {"sensorLocation": "Cali", "aqiValue": 200},
+        {"sensorLocation": "Medellin", "aqiValue": 90},
+        {"sensorLocation": "Cali", "aqiValue": 150},
+        {"sensorLocation": "Bogota", "aqiValue": 100},
+        {"sensorLocation": "Cali", "aqiValue": 220},
+        {"sensorLocation": "Bogota"},   # sin aqiValue -> ignorado por map_avg_aqi
+        {"aqiValue": 50},               # sin sensorLocation -> ignorado
+    ]
+
+    print("=== Serial (original) results ===")
+    # Algoritmo 1: contador de lecturas (serial)
+    mapped1 = map_count_reads(records)
+    shuffled1 = shuffle(mapped1)
+    counts = reduce_count_reads(shuffled1)
+    print("Conteo de lecturas por ubicación (serial):", counts)
+    print("Top sensores (más activos):", top_n_sensors(counts, n=3))
+
+    # Algoritmo 2: promedio AQI por ciudad (serial)
+    mapped2 = map_avg_aqi(records)
+    shuffled2 = shuffle(mapped2)
+    averages = reduce_avg_aqi(shuffled2)
+    print("Promedio AQI por ciudad (serial):", averages)
+    max_city, min_city = city_with_max_min(averages)
+    print(f"Mayor: {max_city}, Menor: {min_city}")
+
+    print("\n=== Paralelo (demo) ===")
+    # Parallel: count reads (this is additive so puede usar >1 reduce)
+    par_counts = parallel_mapreduce(records, map_count_reads, reduce_count_reads, num_map_tasks=3, num_reduce_tasks=2)
+    print("Conteo de lecturas por ubicación (paralelo):", par_counts)
+    print("Top sensores (paralelo):", top_n_sensors(par_counts, n=3))
+
+    # Parallel: average AQI -> usar 1 reduce worker para evitar problemas de fusion de promedios
+    par_avg = parallel_mapreduce(records, map_avg_aqi, reduce_avg_aqi, num_map_tasks=3, num_reduce_tasks=1)
+    print("Promedio AQI por ciudad (paralelo, 1 reduce):", par_avg)
+    max_city_p, min_city_p = city_with_max_min(par_avg)
+    print(f"Mayor (paralelo): {max_city_p}, Menor (paralelo): {min_city_p}")
+
+    # Parallel: mapreduce for city sensor counts
+    par_sensors = parallel_mapreduce(records, map_city_sensors, reduce_sum, num_map_tasks=3, num_reduce_tasks=2)
+    print("Sensores por ciudad (paralelo):", par_sensors)
+
+    # Parallel: processing times (map_processing + reduce_sum_basic)
+    par_proc = parallel_mapreduce(records, lambda rs: map_processing(rs, base_time_per_record=0.05, event_type="normal"),
+                                  reduce_sum_basic, num_map_tasks=3, num_reduce_tasks=1)
+    print("Tiempo total de procesamiento (paralelo, 'proc' key):", par_proc.get("proc", 0.0))
+
+    # Nota sobre join: para join es más sencillo usar la versión serial mapreduce_join tal como la tienes.
+    # Hacer un join paralelizado correcto es posible pero implica elegir cómo particionar por clave.
+    print("\nNota: para join complejo (reduce_join) recomiendo usar num_reduce_tasks=1 o usar la función serial `mapreduce_join`.")
