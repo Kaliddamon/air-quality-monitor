@@ -247,7 +247,7 @@ if st.button("Ejecutar análisis avanzado (W2)"):
             if isinstance(info, dict):
                 rows.append({
                     "Ciudad": city,
-                    "Alertas críticas": info.get("count_critical", 0),
+                    "Alertas críticas": info.get("count_critical", 0)
                 })
         st.write("Frecuencia de alertas críticas por ciudad (Momento 1):")
         st.dataframe(pd.DataFrame(rows), use_container_width=True, height=250)
@@ -338,3 +338,4 @@ if st.button("Ejecutar análisis W4"):
         st.dataframe(pd.DataFrame(anomalies), use_container_width=True, height=250)
     else:
         st.write("No se detectaron anomalías en este dataset.")
+
