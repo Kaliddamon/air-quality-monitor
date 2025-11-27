@@ -8,8 +8,12 @@ import pandas as pd
 from hash_table import HashTable
 from prediction import run_all_and_alert
 from w2_pipeline import run_w2_from_records
+from w3_pipeline import run_w3_from_records, plot_markov_chain
 
-#base paths relative to project root
+
+# ---------------------------------------------------------
+# base project paths
+# ---------------------------------------------------------
 base_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(base_dir))
 DATA_PATH = os.path.join(project_root, "data", "sensor_data_clean.json")
@@ -19,7 +23,9 @@ st.set_page_config(
     layout="wide",
 )
 
-#global styles
+# ---------------------------------------------------------
+# global styles
+# ---------------------------------------------------------
 st.markdown(
     """
     <style>
@@ -29,13 +35,11 @@ st.markdown(
         font-family: 'Inter', sans-serif;
     }
 
-    /* Encabezados más sobrios */
     h1, h2, h3, h4 {
         font-weight: 600;
         letter-spacing: 0.02em;
     }
 
-    /* Tabla: encabezado "fijo" con fondo sólido */
     .stDataFrame tbody tr th {
         position: sticky;
         left: 0;
@@ -48,12 +52,20 @@ st.markdown(
         z-index: 2;
         background-color: #f4f4f4;
     }
+
+    /* Scroll propio del sidebar para muchos filtros */
+    section[data-testid="stSidebar"] > div {
+        max-height: 100vh;
+        overflow-y: auto;
+    }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-#load data
+# ---------------------------------------------------------
+# load data
+# ---------------------------------------------------------
 ht = HashTable()
 if os.path.exists(DATA_PATH):
     ht.load_json(DATA_PATH)
@@ -61,10 +73,11 @@ else:
     st.error(f"No se encontró el archivo de datos en {DATA_PATH}")
     st.stop()
 
-#converter
 records = ht.all_records
 
-
+# ---------------------------------------------------------
+# dataframe converter
+# ---------------------------------------------------------
 def records_to_dataframe(records_list):
     rows = []
     for r in records_list:
@@ -84,14 +97,33 @@ def records_to_dataframe(records_list):
 
 df = records_to_dataframe(records)
 
-#sidebar
+# ---------------------------------------------------------
+# sidebar filters
+# ---------------------------------------------------------
 st.sidebar.title("Filtros")
 
-#city filter
 all_cities = sorted([c for c in df["sensorLocation"].dropna().unique()])
-city_filter = st.sidebar.multiselect("Ciudades", options=all_cities, default=all_cities)
 
-#filter contaminant
+# estado inicial del filtro de ciudades
+if "city_filter" not in st.session_state:
+    st.session_state["city_filter"] = []
+
+# botones: seleccionar todo / limpiar
+btn_col1, btn_col2 = st.sidebar.columns(2)
+with btn_col1:
+    if st.button("Todo"):
+        st.session_state["city_filter"] = all_cities
+with btn_col2:
+    if st.button("Limpiar"):
+        st.session_state["city_filter"] = []
+
+# multiselect controlado por session_state
+city_filter = st.sidebar.multiselect(
+    "Ciudades",
+    options=all_cities,
+    key="city_filter"
+)
+
 pollutant = st.sidebar.selectbox("Contaminante principal", ["PM25", "NO2"])
 
 if not df.empty and pollutant in df.columns:
@@ -109,12 +141,16 @@ else:
 
 show_only_outliers = st.sidebar.checkbox("Mostrar solo registros fuera de umbral", value=False)
 
+# ---------------------------------------------------------
+# title + stats
+# ---------------------------------------------------------
 st.title("Real-Time Air Quality Monitoring Dashboard")
 
 stats = ht.stats()
 global_stats = ht.global_stats()
 
 col1, col2, col3 = st.columns(3)
+
 with col1:
     st.subheader("Resumen de registros")
     st.metric("Total de lecturas", stats["total_records"])
@@ -134,159 +170,138 @@ with col3:
 
 st.markdown("---")
 
-#city rank
+# ---------------------------------------------------------
+# ranking
+# ---------------------------------------------------------
 st.subheader("Ranking de ciudades por contaminante")
 
 ranking = ht.rank_cities_by_pollutant(pollutant=pollutant)
 rank_df = pd.DataFrame(ranking, columns=["Ciudad", f"Promedio {pollutant}"])
 
-st.dataframe(
-    rank_df,
-    use_container_width=True,
-    height=250
-)
+st.dataframe(rank_df, use_container_width=True, height=250)
 
 st.markdown("---")
 
-#table
+# ---------------------------------------------------------
+# table of readings
+# ---------------------------------------------------------
 st.subheader("Lecturas de calidad del aire")
 
 filtered_df = df.copy()
 
-#city filter
+# si no hay ciudades seleccionadas, no se filtra por ciudad
 if city_filter:
     filtered_df = filtered_df[filtered_df["sensorLocation"].isin(city_filter)]
 
-#filter for rank
 if pollutant in filtered_df.columns:
     filtered_df = filtered_df[
-        (filtered_df[pollutant] >= low) &
-        (filtered_df[pollutant] <= high)
+        (filtered_df[pollutant] >= low) & (filtered_df[pollutant] <= high)
     ]
 
-#filter
 if show_only_outliers:
     outliers = ht.detect_outliers()
     ids_outliers = set()
     for rec, info in outliers:
-        aq = rec.get("airQualityData", {}) or {}
         if pollutant in info:
             ids_outliers.add(rec.get("_id"))
     filtered_df = filtered_df[filtered_df["_id"].isin(ids_outliers)]
 
-#order for time
 if "timestamp" in filtered_df.columns:
     filtered_df = filtered_df.sort_values("timestamp", ascending=False)
 
-st.dataframe(
-    filtered_df,
-    use_container_width=True,
-    height=400
-)
+st.dataframe(filtered_df, use_container_width=True, height=400)
 
 st.markdown("---")
 
-#predict
+# ---------------------------------------------------------
+# predictions W1
+# ---------------------------------------------------------
 st.subheader("Predicciones y alertas")
 
 if st.button("Ejecutar predicciones y generar alertas"):
     alerts = run_all_and_alert(ht)
     if alerts:
         st.write("Alertas generadas:")
-        alerts_df = pd.DataFrame(alerts)
-        st.dataframe(
-            alerts_df,
-            use_container_width=True,
-            height=250
-        )
+        st.dataframe(pd.DataFrame(alerts), use_container_width=True, height=250)
     else:
         st.write("No se generaron alertas con las condiciones actuales.")
 
 st.markdown("---")
 
-#w2analysis
+# ---------------------------------------------------------
+# W2
+# ---------------------------------------------------------
 st.subheader("Análisis probabilístico W2")
 
 if st.button("Ejecutar análisis avanzado (W2)"):
-    w2_result = run_w2_from_records(records)
 
-    #distinct events estimate
-    distinct_events = w2_result.get("distinct_events_estimate", 0)
-    st.write(f"Estimación de eventos de contaminación distintos: {distinct_events}")
+    w2 = run_w2_from_records(records)
 
-    #moment 1 by city (critical alerts)
-    moment1_by_city = w2_result.get("moment1_by_city", {})
-    if moment1_by_city:
-        moment1_rows = []
-        for city, info in moment1_by_city.items():
+    st.write(f"Estimación de eventos de contaminación distintos: {w2.get('distinct_events_estimate', 0)}")
+
+    moment1 = w2.get("moment1_by_city", {})
+    if moment1:
+        rows = []
+        for city, info in moment1.items():
             if isinstance(info, dict):
-                count_critical = info.get("count_critical", 0)
-                total_readings = info.get("total_readings", 0)
-                critical_ratio = info.get("critical_ratio", 0.0)
-            else:
-                count_critical = int(info)
-                total_readings = 0
-                critical_ratio = 0.0
-
-            moment1_rows.append({
-                "Ciudad": city,
-                "Alertas críticas": count_critical,
-                "Total lecturas": total_readings,
-                "Proporción crítica": critical_ratio,
-            })
-
-        moment1_df = pd.DataFrame(moment1_rows)
+                rows.append({
+                    "Ciudad": city,
+                    "Alertas críticas": info.get("count_critical", 0),
+                    "Total lecturas": info.get("total_readings", 0),
+                    "Proporción crítica": info.get("critical_ratio", 0.0),
+                })
         st.write("Frecuencia de alertas críticas por ciudad (Momento 1):")
-        st.dataframe(
-            moment1_df,
-            use_container_width=True,
-            height=250
-        )
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, height=250)
 
-
-    #top zones
-    top_zones = w2_result.get("top_zones", [])
-    if top_zones:
-        top_rows = []
-        for item in top_zones:
-            if isinstance(item, dict):
-                zone = item.get("zone")
-                freq = item.get("frequency", 0)
-            elif isinstance(item, (tuple, list)) and len(item) >= 2:
-                zone = item[0]
-                freq = item[1]
-            else:
-                continue
-
-            top_rows.append({
-                "Zona": zone,
-                "Frecuencia crítica": freq,
-            })
-
-        top_df = pd.DataFrame(top_rows)
+    top = w2.get("top_zones", [])
+    if top:
+        rows = []
+        for item in top:
+            if isinstance(item, (tuple, list)):
+                rows.append({"Zona": item[0], "Frecuencia crítica": item[1]})
+            elif isinstance(item, dict):
+                rows.append({"Zona": item.get("zone"), "Frecuencia crítica": item.get("frequency")})
         st.write("Zonas con mayor frecuencia de eventos críticos:")
-        st.dataframe(
-            top_df,
-            use_container_width=True,
-            height=250
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, height=250)
+
+    st.write("DGIM - estimación últimas 100 posiciones:")
+    st.write(f"aproximado: {w2.get('dgim_last_100')} | exacto: {w2.get('dgim_exact_last_100')}")
+    st.write("tendencia DGIM:")
+    st.write(w2.get("dgim_trend"))
+    st.write("predicción próxima ventana:")
+    st.write(w2.get("dgim_prediction"))
+
+    st.write("Resumen de muestreo adaptativo:")
+    st.json(w2.get("sampling_stats", {}))
+
+# ---------------------------------------------------------
+# W3
+# ---------------------------------------------------------
+st.markdown("---")
+st.subheader("Análisis predictivo W3 (Modelos de Markov)")
+
+if st.button("Ejecutar análisis W3"):
+
+    w3 = run_w3_from_records(records)
+
+    st.write("Matriz de transición:")
+    st.json(w3.get("transition_matrix"))
+
+    st.write("Secuencia de estados PM2.5:")
+    st.write(w3.get("states_sequence"))
+
+    st.write("Predicción del próximo estado PM2.5:")
+    st.write(w3.get("predicted_state"))
+
+    st.write("Probabilidades espaciales por ciudad:")
+    st.json(w3.get("spatial_probabilities"))
+
+    st.write("Diagrama de la cadena de Markov:")
+    try:
+        fig = plot_markov_chain(
+            w3.get("states"),
+            w3.get("transition_matrix")
         )
-
-
-    #dgim metrics
-    dgim_last_100 = w2_result.get("dgim_last_100")
-    dgim_exact_last_100 = w2_result.get("dgim_exact_last_100")
-    dgim_trend = w2_result.get("dgim_trend")
-    dgim_prediction = w2_result.get("dgim_prediction")
-
-    st.write("DGIM - estimación de lecturas críticas en las últimas 100 posiciones:")
-    st.write(f"aproximado: {dgim_last_100} | exacto: {dgim_exact_last_100}")
-    st.write("tendencia detectada (DGIM):")
-    st.write(dgim_trend)
-    st.write("predicción próxima ventana (DGIM):")
-    st.write(dgim_prediction)
-
-    #adaptive sampling stats
-    sampling_stats = w2_result.get("sampling_stats", {})
-    if sampling_stats:
-        st.write("Resumen de muestreo adaptativo:")
-        st.json(sampling_stats)
+        st.pyplot(fig)
+    except Exception as e:
+        st.error(f"No se pudo generar el gráfico: {e}")
