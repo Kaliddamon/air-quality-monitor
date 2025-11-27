@@ -247,8 +247,6 @@ if st.button("Ejecutar análisis avanzado (W2)"):
                 rows.append({
                     "Ciudad": city,
                     "Alertas críticas": info.get("count_critical", 0),
-                    "Total lecturas": info.get("total_readings", 0),
-                    "Proporción crítica": info.get("critical_ratio", 0.0),
                 })
         st.write("Frecuencia de alertas críticas por ciudad (Momento 1):")
         st.dataframe(pd.DataFrame(rows), use_container_width=True, height=250)
@@ -305,3 +303,4 @@ if st.button("Ejecutar análisis W3"):
         st.pyplot(fig)
     except Exception as e:
         st.error(f"No se pudo generar el gráfico: {e}")
+
