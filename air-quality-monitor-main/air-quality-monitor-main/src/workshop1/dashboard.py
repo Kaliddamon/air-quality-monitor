@@ -230,47 +230,89 @@ if st.button("Ejecutar predicciones y generar alertas"):
 st.markdown("---")
 
 # ---------------------------------------------------------
-# W2
+# w2
 # ---------------------------------------------------------
-st.subheader("Análisis probabilístico W2")
+st.subheader("análisis probabilístico w2")
 
-if st.button("Ejecutar análisis avanzado (W2)"):
+if st.button("ejecutar análisis avanzado (w2)"):
 
+    # run the probabilistic analysis based on all records
     w2 = run_w2_from_records(records)
 
-    st.write(f"Estimación de eventos de contaminación distintos: {w2.get('distinct_events_estimate', 0)}")
+    # display the estimated number of distinct pollution events (flajolet-martin)
+    st.write(f"estimación de eventos de contaminación distintos: {w2.get('distinct_events_estimate', 0)}")
 
+    # ----------------------------------------------
+    # moment 1: critical alert frequency per city
+    # ----------------------------------------------
     moment1 = w2.get("moment1_by_city", {})
+
+    # optional debug print to inspect structure
+    # st.write("debug moment1_by_city:", moment1)
+
     if moment1:
         rows = []
         for city, info in moment1.items():
+
+            # if the data is a dict, try to extract critical count
             if isinstance(info, dict):
-                rows.append({
-                    "Ciudad": city,
-                    "Alertas críticas": info.get("count_critical", 0)
-                })
-        st.write("Frecuencia de alertas críticas por ciudad (Momento 1):")
+                crit = (
+                    info.get("count_critical")
+                    or info.get("critical")
+                    or info.get("frequency")
+                    or info.get("moment1")
+                    or 0
+                )
+            else:
+                # if it's a number, use it directly
+                crit = info
+
+            rows.append({
+                "Ciudad": city,
+                "Alertas críticas": crit,
+            })
+
+        # display table for moment 1
+        st.write("frecuencia de alertas críticas por ciudad (momento 1):")
         st.dataframe(pd.DataFrame(rows), use_container_width=True, height=250)
 
+    # ----------------------------------------------
+    # top zones: zones with highest critical frequency
+    # ----------------------------------------------
     top = w2.get("top_zones", [])
     if top:
         rows = []
         for item in top:
+            # supports both tuples/lists and dict formats
             if isinstance(item, (tuple, list)):
                 rows.append({"Zona": item[0], "Frecuencia crítica": item[1]})
             elif isinstance(item, dict):
-                rows.append({"Zona": item.get("zone"), "Frecuencia crítica": item.get("frequency")})
-        st.write("Zonas con mayor frecuencia de eventos críticos:")
+                rows.append({
+                    "Zona": item.get("zone"),
+                    "Frecuencia crítica": item.get("frequency")
+                })
+
+        st.write("zonas con mayor frecuencia de eventos críticos:")
         st.dataframe(pd.DataFrame(rows), use_container_width=True, height=250)
 
-    st.write("DGIM - estimación últimas 100 posiciones:")
+    # ----------------------------------------------
+    # dgim estimations for the last 100 positions
+    # ----------------------------------------------
+    st.write("dgim - estimación últimas 100 posiciones:")
     st.write(f"aproximado: {w2.get('dgim_last_100')} | exacto: {w2.get('dgim_exact_last_100')}")
-    st.write("tendencia DGIM:")
+
+    # display trend from dgim
+    st.write("tendencia dgim:")
     st.write(w2.get("dgim_trend"))
+
+    # display next-window prediction
     st.write("predicción próxima ventana:")
     st.write(w2.get("dgim_prediction"))
 
-    st.write("Resumen de muestreo adaptativo:")
+    # ----------------------------------------------
+    # adaptive sampling summary
+    # ----------------------------------------------
+    st.write("resumen de muestreo adaptativo:")
     st.json(w2.get("sampling_stats", {}))
 
 # ---------------------------------------------------------
@@ -338,4 +380,5 @@ if st.button("Ejecutar análisis W4"):
         st.dataframe(pd.DataFrame(anomalies), use_container_width=True, height=250)
     else:
         st.write("No se detectaron anomalías en este dataset.")
+
 
