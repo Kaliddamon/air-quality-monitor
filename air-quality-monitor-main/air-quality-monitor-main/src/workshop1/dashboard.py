@@ -9,6 +9,7 @@ from hash_table import HashTable
 from prediction import run_all_and_alert
 from w2_pipeline import run_w2_from_records
 from w3_pipeline import run_w3_from_records, plot_markov_chain
+from w4_pipeline import run_w4_from_records
 
 
 # ---------------------------------------------------------
@@ -304,3 +305,36 @@ if st.button("Ejecutar análisis W3"):
     except Exception as e:
         st.error(f"No se pudo generar el gráfico: {e}")
 
+# ---------------------------------------------------------
+# w4
+# ---------------------------------------------------------
+st.markdown("---")
+st.subheader("Análisis avanzado W4 (K-Means, anomalías y similitud entre ciudades)")
+
+if st.button("Ejecutar análisis W4"):
+
+    w4 = run_w4_from_records(records)
+
+    #cluster labels
+    st.write("Asignación de clusters (por registro):")
+    st.json(w4.get("cluster_labels"))
+
+    #global centroids
+    st.write("Centroides globales (normalizados):")
+    st.json(w4.get("centroids"))
+
+    #centroids by city
+    st.write("Promedios PM2.5 y NO2 por ciudad:")
+    st.json(w4.get("city_centroids"))
+
+    #raw similarity matrix
+    st.write("Matriz de similitud entre ciudades (distancia euclidiana):")
+    st.json(w4.get("city_similarity_matrix"))
+
+    #detect anomalies
+    st.write("Anomalías detectadas (top 5% más alejadas del cluster):")
+    anomalies = w4.get("anomalies", [])
+    if anomalies:
+        st.dataframe(pd.DataFrame(anomalies), use_container_width=True, height=250)
+    else:
+        st.write("No se detectaron anomalías en este dataset.")
