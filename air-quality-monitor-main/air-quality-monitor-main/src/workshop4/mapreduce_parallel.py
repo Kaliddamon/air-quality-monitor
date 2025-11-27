@@ -601,58 +601,22 @@ def parallel_mapreduce(records,
                 final_result[k] = v
     return final_result
 
-def parallel_mapreduce_join(pollution_records, weather_records, key_field="sensorLocation", join_type="inner",
-                            num_map_tasks=4, num_reduce_tasks=1):
-    """
-    Versión paralela simplificada del join: mapea pollution y weather en paralelo (misma queue),
-    y usa reduce_join en el reduce stage. Por simplicidad reduce en 1 worker por defecto.
-    """
-    # combinamos las listas y usamos wrapper maps para que cada chunk contenga tanto pollution como weather
-    combined_mapped = []
-
-    # We'll call map_pollution and map_weather in the map workers by sending two types of tasks.
-    # To keep it simple: build a single list tags where each element is a record tagged with source.
-    tagged = [("pollution", r) for r in pollution_records] + [("weather", r) for r in weather_records]
-
-    # Prepare a map function wrapper that expects a chunk of tagged records
-    def map_tagged(chunk):
-        out = []
-        for tag, rec in chunk:
-            if tag == "pollution":
-                out.extend(map_pollution([rec], key_field=key_field))
-            else:
-                out.extend(map_weather([rec], key_field=key_field))
-        return out
-
-    # Use the general parallel_mapreduce but with reduce_join as reduce_func.
-    # reduce_join expects a dict of key->[items], and optionally join_type as arg.
-    result = parallel_mapreduce(tagged, map_tagged, lambda sh: reduce_join(sh, join_type=join_type),
-                                num_map_tasks=num_map_tasks, num_reduce_tasks=num_reduce_tasks)
-    # parallel_mapreduce merges numeric values by sum; here reduce_join returns a list (reports) per key?
-    # In our implementation reduce_join returns a LIST of reports (not a dict) -> to keep API stable we
-    # wrapped reduce_join into a lambda that returns a dict with single key '__reports' to pass through.
-    # But to keep it simpler for now, we used wrapper above; final `result` contains entries merged by key
-    # where values are whatever reduce_join returned. For simplicity we just return the raw `result`.
-    return result
-
 # ------------------------------
 # Ejemplos de uso paralelo (manteniendo tus ejemplos)
 # ------------------------------
-if __name__ == "__main__":
-    # Datos de ejemplo (simulan los registros del JSON que enviaste)
-    records = [
-        {"sensorLocation": "Bogota", "aqiValue": 120},
-        {"sensorLocation": "Bogota", "aqiValue": 130},
-        {"sensorLocation": "Medellin", "aqiValue": 80},
-        {"sensorLocation": "Cali", "aqiValue": 200},
-        {"sensorLocation": "Medellin", "aqiValue": 90},
-        {"sensorLocation": "Cali", "aqiValue": 150},
-        {"sensorLocation": "Bogota", "aqiValue": 100},
-        {"sensorLocation": "Cali", "aqiValue": 220},
-        {"sensorLocation": "Bogota"},   # sin aqiValue -> ignorado por map_avg_aqi
-        {"aqiValue": 50},               # sin sensorLocation -> ignorado
-    ]
+# Datos de ejemplo (simulan los registros del JSON que enviaste)
 
+
+import time
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# ---------------------------------------------------------
+# Helpers para medir rendimiento
+# ---------------------------------------------------------
+
+def measure_serial(records):
+    t0 = time.time()
     print("=== Serial (original) results ===")
     # Algoritmo 1: contador de lecturas (serial)
     mapped1 = map_count_reads(records)
@@ -668,7 +632,11 @@ if __name__ == "__main__":
     print("Promedio AQI por ciudad (serial):", averages)
     max_city, min_city = city_with_max_min(averages)
     print(f"Mayor: {max_city}, Menor: {min_city}")
+    t1 = time.time()
+    return t1 - t0
 
+def measure_parallel(records, num_map=2, num_reduce=2):
+    t0 = time.time()
     print("\n=== Paralelo (demo) ===")
     # Parallel: count reads (this is additive so puede usar >1 reduce)
     par_counts = parallel_mapreduce(records, map_count_reads, reduce_count_reads, num_map_tasks=3, num_reduce_tasks=2)
@@ -676,20 +644,165 @@ if __name__ == "__main__":
     print("Top sensores (paralelo):", top_n_sensors(par_counts, n=3))
 
     # Parallel: average AQI -> usar 1 reduce worker para evitar problemas de fusion de promedios
-    par_avg = parallel_mapreduce(records, map_avg_aqi, reduce_avg_aqi, num_map_tasks=3, num_reduce_tasks=1)
+    par_avg = parallel_mapreduce(records, map_avg_aqi, reduce_avg_aqi, num_map_tasks=num_map, num_reduce_tasks=num_reduce)
     print("Promedio AQI por ciudad (paralelo, 1 reduce):", par_avg)
     max_city_p, min_city_p = city_with_max_min(par_avg)
     print(f"Mayor (paralelo): {max_city_p}, Menor (paralelo): {min_city_p}")
 
     # Parallel: mapreduce for city sensor counts
-    par_sensors = parallel_mapreduce(records, map_city_sensors, reduce_sum, num_map_tasks=3, num_reduce_tasks=2)
+    par_sensors = parallel_mapreduce(records, map_city_sensors, reduce_sum, num_map_tasks=num_map, num_reduce_tasks=num_reduce)
     print("Sensores por ciudad (paralelo):", par_sensors)
+    t1 = time.time()
+    return t1 - t0
 
-    # Parallel: processing times (map_processing + reduce_sum_basic)
-    par_proc = parallel_mapreduce(records, lambda rs: map_processing(rs, base_time_per_record=0.05, event_type="normal"),
-                                  reduce_sum_basic, num_map_tasks=3, num_reduce_tasks=1)
-    print("Tiempo total de procesamiento (paralelo, 'proc' key):", par_proc.get("proc", 0.0))
+# ---------------------------------------------------------
+# Ejecutar pruebas
+# ---------------------------------------------------------
 
-    # Nota sobre join: para join es más sencillo usar la versión serial mapreduce_join tal como la tienes.
-    # Hacer un join paralelizado correcto es posible pero implica elegir cómo particionar por clave.
-    print("\nNota: para join complejo (reduce_join) recomiendo usar num_reduce_tasks=1 o usar la función serial `mapreduce_join`.")
+def run_benchmark(input_data, worker_configs):
+    results = []
+
+    # medir serial
+    serial_time = measure_serial(input_data)
+
+    for (m, r) in worker_configs:
+        parallel_time = measure_parallel(input_data, m, r)
+
+        speedup = serial_time / parallel_time
+        efficiency = speedup / (m + r)
+
+        results.append({
+            "Map workers": m,
+            "Reduce workers": r,
+            "Total workers": m + r,
+            "Serial time (s)": serial_time,
+            "Parallel time (s)": parallel_time,
+            "Speedup": speedup,
+            "Efficiency": efficiency,
+        })
+
+    return pd.DataFrame(results)
+
+# ---------------------------------------------------------
+# Ejemplo de uso
+# ---------------------------------------------------------
+
+### ALGORITMO 4
+# Datos de ejemplo: muchos sensores en algunas ciudades
+example_records = [
+    {"sensorLocation": "Bogota"}, {"sensorLocation": "Bogota"}, {"sensorLocation": "Bogota"},
+    {"sensorLocation": "Medellin"}, {"sensorLocation": "Medellin"},
+    {"sensorLocation": "Cali"}, {"sensorLocation": "Cali"}, {"sensorLocation": "Cali"}, {"sensorLocation": "Cali"},
+    {"sensorLocation": "Barranquilla"}
+]
+
+costs = estimate_monitoring_costs(example_records)
+print("Resumen costos (Algoritmo 4):")
+print("  Ciudades detectadas:", costs["num_cities"])
+print("  Total sensores:", costs["total_sensors"])
+print("  Costo total estimado (USD/año): {:.2f}".format(costs["total_monitoring_cost_usd_per_year"]))
+print("  Almacenamiento anual (hourly) GB: {:.2f}".format(costs["storage_hourly_gb_per_year"]))
+print("  Almacenamiento anual (daily)  GB: {:.2f}".format(costs["storage_daily_gb_per_year"]))
+print("  Estimaciones de procesamiento (por nodos):")
+for n, info in costs["processing_estimates_by_nodes"].items():
+    print("    nodos={}: tiempo(h)={:.2f}, costo_usd={:.2f}, nodos_efectivos={:.1f}".format(
+        n, info["wall_time_hours"], info["cost_usd"], info["speedup"]))
+
+### ALGORITMO 5
+# dataset base de ejemplo (10 registros)
+sample_records = [{"sensorLocation": "Bogota", "aqiValue": 100}] * 10
+
+perf = evaluate_performance(sample_records,
+                            nodes_list=[1,2,5,10],
+                            base_time_per_record=0.04,
+                            event_types=("normal", "critical"),
+                            event_multipliers={"normal": 1.0, "critical": 3.0},
+                            alert_rate_multiplier=4.0,
+                            nodes_cost_per_hour=0.25)
+
+print("\nResumen rendimiento (Algoritmo 5):")
+for event in perf:
+    print("Evento:", event)
+    for n in perf[event]:
+        info = perf[event][n]
+        print("  nodos={}: registros={}, tiempo(h)={:.3f}, costo=${:.2f}, throughput={:.2f} rec/s".format(
+            n, info["num_records"], info["wall_time_hours"], info["cost_usd"], info["throughput_records_per_sec"]
+        ))
+
+
+# Configuraciones de trabajadores a evaluar
+worker_configs = [
+    (1, 1),
+    (2, 2),
+    (3, 2),
+    (4, 2),
+    (6, 2),
+]
+
+input_data = [
+    {"sensorLocation": "Bogota", "aqiValue": 120},
+    {"sensorLocation": "Bogota", "aqiValue": 130},
+    {"sensorLocation": "Medellin", "aqiValue": 80},
+    {"sensorLocation": "Cali", "aqiValue": 200},
+    {"sensorLocation": "Medellin", "aqiValue": 90},
+    {"sensorLocation": "Cali", "aqiValue": 150},
+    {"sensorLocation": "Bogota", "aqiValue": 100},
+    {"sensorLocation": "Cali", "aqiValue": 220},
+    {"sensorLocation": "Bogota", "aqiValue": 120},
+    {"sensorLocation": "Bogota", "aqiValue": 130},
+    {"sensorLocation": "Medellin", "aqiValue": 80},
+    {"sensorLocation": "Cali", "aqiValue": 200},
+    {"sensorLocation": "Medellin", "aqiValue": 90},
+    {"sensorLocation": "Cali", "aqiValue": 150},
+    {"sensorLocation": "Bogota", "aqiValue": 100},
+    {"sensorLocation": "Cali", "aqiValue": 220},
+    {"sensorLocation": "Bogota", "aqiValue": 120},
+    {"sensorLocation": "Bogota", "aqiValue": 130},
+    {"sensorLocation": "Medellin", "aqiValue": 80},
+    {"sensorLocation": "Cali", "aqiValue": 200},
+    {"sensorLocation": "Medellin", "aqiValue": 90},
+    {"sensorLocation": "Cali", "aqiValue": 150},
+    {"sensorLocation": "Bogota", "aqiValue": 100},
+    {"sensorLocation": "Cali", "aqiValue": 220},
+    {"sensorLocation": "Bogota"},   # sin aqiValue -> ignorado por map_avg_aqi
+    {"aqiValue": 50},               # sin sensorLocation -> ignorado
+]
+
+# Benchmark
+df = run_benchmark(
+    input_data=input_data,
+    worker_configs=worker_configs
+)
+
+print(df)
+
+# ---------------------------------------------------------
+# Visualizaciones estilo dashboard
+# ---------------------------------------------------------
+
+# --- Tiempo de ejecución ---
+plt.figure(figsize=(10,5))
+plt.bar(["Serial"], [df["Serial time (s)"].iloc[0]])
+plt.bar([f"{m+r} workers" for m,r in zip(df["Map workers"], df["Reduce workers"])],
+        df["Parallel time (s)"])
+plt.ylabel("Tiempo (segundos)")
+plt.title("Tiempo de ejecución: Serial vs Paralelo")
+plt.show()
+
+# --- Speedup ---
+plt.figure(figsize=(10,5))
+plt.plot(df["Total workers"], df["Speedup"], marker="o")
+plt.xlabel("Número total de procesos (map + reduce)")
+plt.ylabel("Speedup")
+plt.title("Speedup al aumentar los Workers")
+plt.grid(True)
+plt.show()
+
+# --- Eficiencia ---
+plt.figure(figsize=(10,5))
+plt.plot(df["Total workers"], df["Efficiency"], marker="o")
+plt.xlabel("Número total de procesos")
+plt.ylabel("Eficiencia")
+plt.title("Eficiencia paralela")
+plt.grid(True)
+plt.show()
