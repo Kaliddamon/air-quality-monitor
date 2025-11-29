@@ -780,29 +780,39 @@ print(df)
 # Visualizaciones estilo dashboard
 # ---------------------------------------------------------
 
+def testMapReduce(input_data, worker_configs):
+    df = run_benchmark(input_data=input_data, worker_configs=worker_configs)
+
+    chart_data = pd.DataFrame(
+        [df["Serial time (s)"].iloc[0]] + df["Parallel time (s)"],
+        columns=["Serial", [f"{m+r} workers" for m,r in zip(df["Map workers"], df["Reduce workers"])]],
+    )
+
+    return chart_data
+
 # --- Tiempo de ejecución ---
-plt.figure(figsize=(10,5))
-plt.bar(["Serial"], [df["Serial time (s)"].iloc[0]])
-plt.bar([f"{m+r} workers" for m,r in zip(df["Map workers"], df["Reduce workers"])],
-        df["Parallel time (s)"])
-plt.ylabel("Tiempo (segundos)")
-plt.title("Tiempo de ejecución: Serial vs Paralelo")
-plt.show()
+# plt.figure(figsize=(10,5))
+# plt.bar(["Serial"], [df["Serial time (s)"].iloc[0]])
+# plt.bar([f"{m+r} workers" for m,r in zip(df["Map workers"], df["Reduce workers"])],
+#         df["Parallel time (s)"])
+# plt.ylabel("Tiempo (segundos)")
+# plt.title("Tiempo de ejecución: Serial vs Paralelo")
+# plt.show()
 
-# --- Speedup ---
-plt.figure(figsize=(10,5))
-plt.plot(df["Total workers"], df["Speedup"], marker="o")
-plt.xlabel("Número total de procesos (map + reduce)")
-plt.ylabel("Speedup")
-plt.title("Speedup al aumentar los Workers")
-plt.grid(True)
-plt.show()
+# # --- Speedup ---
+# plt.figure(figsize=(10,5))
+# plt.plot(df["Total workers"], df["Speedup"], marker="o")
+# plt.xlabel("Número total de procesos (map + reduce)")
+# plt.ylabel("Speedup")
+# plt.title("Speedup al aumentar los Workers")
+# plt.grid(True)
+# plt.show()
 
-# --- Eficiencia ---
-plt.figure(figsize=(10,5))
-plt.plot(df["Total workers"], df["Efficiency"], marker="o")
-plt.xlabel("Número total de procesos")
-plt.ylabel("Eficiencia")
-plt.title("Eficiencia paralela")
-plt.grid(True)
-plt.show()
+# # --- Eficiencia ---
+# plt.figure(figsize=(10,5))
+# plt.plot(df["Total workers"], df["Efficiency"], marker="o")
+# plt.xlabel("Número total de procesos")
+# plt.ylabel("Eficiencia")
+# plt.title("Eficiencia paralela")
+# plt.grid(True)
+# plt.show()
