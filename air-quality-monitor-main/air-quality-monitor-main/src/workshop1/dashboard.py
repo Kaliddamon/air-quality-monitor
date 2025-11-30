@@ -358,10 +358,11 @@ st.subheader("Análisis avanzado W4 (K-Means, anomalías y similitud entre ciuda
 
 if st.button("Ejecutar análisis W4"):
 
-    chart_data = run_w4_from_records(records)
-
     #cluster labels
     st.write("Gráfico de barras (Comparación Map Reduce Serial y Paralelo):")
+
+    chart_data = run_w4_from_records(records)
     st.bar_chart(chart_data)
+
 
 
