@@ -730,51 +730,51 @@ for event in perf:
         ))
 
 
-# Configuraciones de trabajadores a evaluar
-worker_configs = [
-    (1, 1),
-    (2, 2),
-    (3, 2),
-    (4, 2),
-    (6, 2),
-]
+# # Configuraciones de trabajadores a evaluar
+# worker_configs = [
+#     (1, 1),
+#     (2, 2),
+#     (3, 2),
+#     (4, 2),
+#     (6, 2),
+# ]
 
-input_data = [
-    {"sensorLocation": "Bogota", "aqiValue": 120},
-    {"sensorLocation": "Bogota", "aqiValue": 130},
-    {"sensorLocation": "Medellin", "aqiValue": 80},
-    {"sensorLocation": "Cali", "aqiValue": 200},
-    {"sensorLocation": "Medellin", "aqiValue": 90},
-    {"sensorLocation": "Cali", "aqiValue": 150},
-    {"sensorLocation": "Bogota", "aqiValue": 100},
-    {"sensorLocation": "Cali", "aqiValue": 220},
-    {"sensorLocation": "Bogota", "aqiValue": 120},
-    {"sensorLocation": "Bogota", "aqiValue": 130},
-    {"sensorLocation": "Medellin", "aqiValue": 80},
-    {"sensorLocation": "Cali", "aqiValue": 200},
-    {"sensorLocation": "Medellin", "aqiValue": 90},
-    {"sensorLocation": "Cali", "aqiValue": 150},
-    {"sensorLocation": "Bogota", "aqiValue": 100},
-    {"sensorLocation": "Cali", "aqiValue": 220},
-    {"sensorLocation": "Bogota", "aqiValue": 120},
-    {"sensorLocation": "Bogota", "aqiValue": 130},
-    {"sensorLocation": "Medellin", "aqiValue": 80},
-    {"sensorLocation": "Cali", "aqiValue": 200},
-    {"sensorLocation": "Medellin", "aqiValue": 90},
-    {"sensorLocation": "Cali", "aqiValue": 150},
-    {"sensorLocation": "Bogota", "aqiValue": 100},
-    {"sensorLocation": "Cali", "aqiValue": 220},
-    {"sensorLocation": "Bogota"},   # sin aqiValue -> ignorado por map_avg_aqi
-    {"aqiValue": 50},               # sin sensorLocation -> ignorado
-]
+# input_data = [
+#     {"sensorLocation": "Bogota", "aqiValue": 120},
+#     {"sensorLocation": "Bogota", "aqiValue": 130},
+#     {"sensorLocation": "Medellin", "aqiValue": 80},
+#     {"sensorLocation": "Cali", "aqiValue": 200},
+#     {"sensorLocation": "Medellin", "aqiValue": 90},
+#     {"sensorLocation": "Cali", "aqiValue": 150},
+#     {"sensorLocation": "Bogota", "aqiValue": 100},
+#     {"sensorLocation": "Cali", "aqiValue": 220},
+#     {"sensorLocation": "Bogota", "aqiValue": 120},
+#     {"sensorLocation": "Bogota", "aqiValue": 130},
+#     {"sensorLocation": "Medellin", "aqiValue": 80},
+#     {"sensorLocation": "Cali", "aqiValue": 200},
+#     {"sensorLocation": "Medellin", "aqiValue": 90},
+#     {"sensorLocation": "Cali", "aqiValue": 150},
+#     {"sensorLocation": "Bogota", "aqiValue": 100},
+#     {"sensorLocation": "Cali", "aqiValue": 220},
+#     {"sensorLocation": "Bogota", "aqiValue": 120},
+#     {"sensorLocation": "Bogota", "aqiValue": 130},
+#     {"sensorLocation": "Medellin", "aqiValue": 80},
+#     {"sensorLocation": "Cali", "aqiValue": 200},
+#     {"sensorLocation": "Medellin", "aqiValue": 90},
+#     {"sensorLocation": "Cali", "aqiValue": 150},
+#     {"sensorLocation": "Bogota", "aqiValue": 100},
+#     {"sensorLocation": "Cali", "aqiValue": 220},
+#     {"sensorLocation": "Bogota"},   # sin aqiValue -> ignorado por map_avg_aqi
+#     {"aqiValue": 50},               # sin sensorLocation -> ignorado
+# ]
 
-# Benchmark
-df = run_benchmark(
-    input_data=input_data,
-    worker_configs=worker_configs
-)
+# # Benchmark
+# df = run_benchmark(
+#     input_data=input_data,
+#     worker_configs=worker_configs
+# )
 
-print(df)
+# print(df)
 
 # ---------------------------------------------------------
 # Visualizaciones estilo dashboard
