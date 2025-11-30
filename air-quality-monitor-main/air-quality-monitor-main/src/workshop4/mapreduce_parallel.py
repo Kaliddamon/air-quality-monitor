@@ -798,10 +798,19 @@ for event in perf:
 def testMapReduce(input_data, worker_configs):
     df = run_benchmark(input_data=input_data, worker_configs=worker_configs)
 
-    chart_data = pd.DataFrame(
-        [df["Serial time (s)"].iloc[0]] + df["Parallel time (s)"],
-        columns=["Serial", [f"{m+r} workers" for m,r in zip(df["Map workers"], df["Reduce workers"])]],
-    )
+    # Asegurarnos de que df no esté vacío
+    if df.empty:
+        return pd.DataFrame()
+
+    # Obtener tiempos como lista (convertir la Series a lista)
+    serial_time = df["Serial time (s)"].iloc[0]
+    parallel_times = df["Parallel time (s)"].tolist()
+
+    # Etiquetas: "Serial" y luego "<m+r> workers" por cada fila
+    labels = ["Serial"] + [f"{m+r} workers" for m, r in zip(df["Map workers"], df["Reduce workers"])]
+
+    # Construir DataFrame con índice = labels y una columna 'Time (s)'
+    chart_data = pd.DataFrame({"Time (s)": [serial_time] + parallel_times}, index=labels)
 
     return chart_data
 
