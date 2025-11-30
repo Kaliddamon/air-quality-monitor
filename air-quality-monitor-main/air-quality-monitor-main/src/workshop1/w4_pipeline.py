@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-import workshop4.mapreduce_parallel
+from workshop4.mapreduce_parallel import testMapReduce
 
 #mainpipelineforw4
 def run_w4_from_records(records):
@@ -16,6 +16,7 @@ def run_w4_from_records(records):
 
     chart_data = testMapReduce(records, worker_configs)
     return chart_data
+
 
 
 
