@@ -3,6 +3,7 @@ import time
 import random
 import math
 from collections import defaultdict, Counter
+import queue
 
 # ------------------------------
 # Shuffle (agrupación) simple
@@ -526,45 +527,47 @@ def parallel_mapreduce(records,
                        map_args=None,
                        map_kwargs=None,
                        reduce_args=None,
-                       reduce_kwargs=None):
+                       reduce_kwargs=None,
+                       result_timeout=30.0):
     """
-    Paraleliza un MapReduce simple:
-      - records: lista de registros (cada map recibe una sublista)
-      - map_func(records_chunk) -> list of (k,v)
-      - reduce_func(shuffled_dict) -> dict (resultado por clave)
-    Nota: para reduce funciones no aditivas (promedios, joins) usar num_reduce_tasks=1 para simplicidad.
+    Versión robusta que:
+     - usa un contexto explícito ('spawn')
+     - recoge resultados desde result_queue ANTES de join() para evitar deadlocks
+     - usa timeouts y logs mínimos
     """
-    # Queues
-    map_queue = multiprocessing.Queue()
-    reduce_queue = multiprocessing.Queue()
-    result_queue = multiprocessing.Queue()
+    ctx = multiprocessing.get_context('spawn')
+
+    map_queue = ctx.Queue()
+    reduce_queue = ctx.Queue()
+    result_queue = ctx.Queue()
 
     # Start map workers
     map_workers = []
     for _ in range(num_map_tasks):
-        p = multiprocessing.Process(target=_map_worker, args=(map_queue, reduce_queue, map_func, map_args, map_kwargs))
+        p = ctx.Process(target=_map_worker, args=(map_queue, reduce_queue, map_func, map_args, map_kwargs))
+        p.daemon = True
         p.start()
         map_workers.append(p)
 
     # Start reduce workers
     reduce_workers = []
     for _ in range(num_reduce_tasks):
-        p = multiprocessing.Process(target=_reduce_worker, args=(reduce_queue, result_queue, reduce_func, reduce_args, reduce_kwargs))
+        p = ctx.Process(target=_reduce_worker, args=(reduce_queue, result_queue, reduce_func, reduce_args, reduce_kwargs))
+        p.daemon = True
         p.start()
         reduce_workers.append(p)
 
     # Split records into chunks (simple block partition)
     n = len(records)
     if n == 0:
-        # send termination signals and collect empty results
         for _ in range(num_map_tasks):
             map_queue.put(None)
         for p in map_workers:
-            p.join()
+            p.join(timeout=5.0)
         for _ in range(num_reduce_tasks):
             reduce_queue.put(None)
         for p in reduce_workers:
-            p.join()
+            p.join(timeout=5.0)
         return {}
 
     chunk_size = int(math.ceil(n / float(num_map_tasks)))
@@ -572,32 +575,44 @@ def parallel_mapreduce(records,
         chunk = records[i:i+chunk_size]
         map_queue.put(chunk)
 
-    # signal mapers to stop
+    # tell mappers to stop after chunks
     for _ in range(num_map_tasks):
         map_queue.put(None)
 
-    # wait for map workers to finish (they produce items on reduce_queue)
+    # wait for map workers to finish producing to reduce_queue
     for p in map_workers:
         p.join()
 
-    # signal reduce workers to stop (after all map outputs are enqueued)
+    # signal reduce workers to stop (they will reduce accumulated and put result)
     for _ in range(num_reduce_tasks):
         reduce_queue.put(None)
 
-    # wait reduce workers
-    for p in reduce_workers:
-        p.join()
+    # IMPORTANT: collect results FROM result_queue BEFORE joining reduce workers
+    partials = []
+    for i in range(num_reduce_tasks):
+        try:
+            partial = result_queue.get(timeout=result_timeout)
+            partials.append(partial)
+        except queue.Empty:
+            # timeout esperando resultados: log y seguir intentado (o romper)
+            print(f"[parallel_mapreduce] timeout esperando resultado {i+1}/{num_reduce_tasks}")
+            # opcional: seguir intentando una vez más o continuar
+            # aquí continuation simple: break
+            break
 
-    # collect results (each reduce worker produced a dict)
+    # now join reduce workers (they should be able to exit because we consumed results)
+    for p in reduce_workers:
+        p.join(timeout=5.0)
+
+    # merge partials
     final_result = {}
-    for _ in range(num_reduce_tasks):
-        partial = result_queue.get()
-        # merge partials: si los valores son numéricos (int/float) sumar, si no, sobrescribir
+    for partial in partials:
+        if not isinstance(partial, dict):
+            continue
         for k, v in partial.items():
             if isinstance(v, (int, float)):
                 final_result[k] = final_result.get(k, 0) + v
             else:
-                # para estructuras no aditivas (ej. listas, dicts) hacemos "last writer wins"
                 final_result[k] = v
     return final_result
 
