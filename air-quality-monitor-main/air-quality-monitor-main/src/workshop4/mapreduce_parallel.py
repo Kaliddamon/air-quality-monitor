@@ -4,6 +4,8 @@ import random
 import math
 from collections import defaultdict, Counter
 import queue
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import traceback
 
 # ------------------------------
 # Shuffle (agrupación) simple
@@ -20,6 +22,55 @@ def shuffle(mapped):
         else:
             groups[k] = [v]
     return groups
+
+def _shuffle_bucket(pairs):
+    """
+    pairs: list of (k, v)
+    devuelve dict: k -> [v,...]
+    """
+    d = {}
+    for k, v in pairs:
+        d.setdefault(k, []).append(v)
+    return d
+
+def _merge_dicts_sum_semantics(dest, src):
+    """
+    Mezcla src en dest in-place.
+    Si el valor es numérico (int/float), suma; si no, sobrescribe.
+    """
+    for k, v in src.items():
+        if isinstance(v, (int, float)):
+            dest[k] = dest.get(k, 0) + v
+        else:
+            dest[k] = v
+    return dest
+
+def testMapReduce(input_data, worker_configs):
+    df, counts, averages, max_city, min_city = run_benchmark(input_data=input_data, worker_configs=worker_configs)
+        
+    # Asegurarnos de que df no esté vacío
+    if df.empty:
+        return pd.DataFrame()
+        
+    # Obtener tiempos como lista (convertir la Series a lista)
+    serial_time = df["Serial time (s)"].iloc[0]
+    parallel_times = df["Parallel time (s)"].tolist()
+        
+    # Etiquetas: "Serial" y luego "<m+r> workers" por cada fila
+    labels = ["Serial"] + [f"{m+r} workers" for m, r in zip(df["Map workers"], df["Reduce workers"])]
+        
+    # Construir DataFrame con índice = labels y una columna 'Time (s)'
+    chart_data = pd.DataFrame({"Time (s)": [serial_time] + parallel_times}, index=labels)
+
+    result = {
+        "chart_data" : chart_data,
+        "counts" : counts,
+        "averages" : averages,
+        "max_city" : max_city,
+        "min_city" : min_city
+    }
+        
+    return result
 
 # ------------------------------
 # Algoritmo 1: Contador de Lecturas
@@ -519,102 +570,106 @@ def _reduce_worker(reduce_queue, result_queue, reduce_func, reduce_args, reduce_
         # print(f"[{proc_name}] received chunk with {len(task)} keys")
         time.sleep(random.uniform(0.0, 0.01))
 
-def parallel_mapreduce(records,
-                       map_func,
-                       reduce_func,
-                       num_map_tasks=4,
-                       num_reduce_tasks=2,
-                       map_args=None,
-                       map_kwargs=None,
-                       reduce_args=None,
-                       reduce_kwargs=None,
-                       result_timeout=30.0):
+def parallel_mapreduce(
+    records,
+    map_func,
+    reduce_func,
+    num_map_tasks=4,
+    num_shuffle_tasks=2,
+    num_reduce_tasks=2,
+    chunking_override=None,
+):
     """
-    Versión robusta que:
-     - usa un contexto explícito ('spawn')
-     - recoge resultados desde result_queue ANTES de join() para evitar deadlocks
-     - usa timeouts y logs mínimos
+    pipeline paralelizado en 3 fases:
+      1) map: procesa chunks en procesos (cada map_func devuelve list of (k,v))
+      2) shuffle: particiona por hash(k) y agrupa cada bucket (paralelizado)
+      3) reduce: aplica reduce_func a cada bucket (paralelizado) y merge final
+
+    Args:
+      records: lista de registros
+      map_func(chunk) -> list of (k, v)
+      reduce_func(shuffled_dict) -> dict (resultado por clave)  -- debe procesar el dict local de su bucket
+      num_map_tasks/num_shuffle_tasks/num_reduce_tasks: paralelismos por fase
+      chunking_override: si quieres pasar un chunk_size fijo (int); si None se calcula automáticamente.
+    Returns:
+      dict final con k -> reduced_value
     """
-    ctx = multiprocessing.get_context('spawn')
 
-    map_queue = ctx.Queue()
-    reduce_queue = ctx.Queue()
-    result_queue = ctx.Queue()
-
-    # Start map workers
-    map_workers = []
-    for _ in range(num_map_tasks):
-        p = ctx.Process(target=_map_worker, args=(map_queue, reduce_queue, map_func, map_args, map_kwargs))
-        p.daemon = True
-        p.start()
-        map_workers.append(p)
-
-    # Start reduce workers
-    reduce_workers = []
-    for _ in range(num_reduce_tasks):
-        p = ctx.Process(target=_reduce_worker, args=(reduce_queue, result_queue, reduce_func, reduce_args, reduce_kwargs))
-        p.daemon = True
-        p.start()
-        reduce_workers.append(p)
-
-    # Split records into chunks (simple block partition)
+    # sanity
     n = len(records)
     if n == 0:
-        for _ in range(num_map_tasks):
-            map_queue.put(None)
-        for p in map_workers:
-            p.join(timeout=5.0)
-        for _ in range(num_reduce_tasks):
-            reduce_queue.put(None)
-        for p in reduce_workers:
-            p.join(timeout=5.0)
         return {}
 
-    chunk_size = int(math.ceil(n / float(num_map_tasks)))
-    for i in range(0, n, chunk_size):
-        chunk = records[i:i+chunk_size]
-        map_queue.put(chunk)
+    # -----------------
+    # 1) MAP stage
+    # -----------------
+    # chunkeo simple
+    if chunking_override is None:
+        chunk_size = int(math.ceil(n / float(num_map_tasks)))
+    else:
+        chunk_size = int(chunking_override)
+    chunks = [records[i:i+chunk_size] for i in range(0, n, chunk_size)]
 
-    # tell mappers to stop after chunks
-    for _ in range(num_map_tasks):
-        map_queue.put(None)
+    mapped_pairs = []  # lista de (k,v) provenientes de todos los map workers
+    with ProcessPoolExecutor(max_workers=num_map_tasks) as map_executor:
+        map_futures = [map_executor.submit(map_func, ch) for ch in chunks]
+        for f in as_completed(map_futures):
+            try:
+                res = f.result()  # debe ser lista de (k,v)
+                if res:
+                    mapped_pairs.extend(res)
+            except Exception:
+                print("Exception in map worker:")
+                traceback.print_exc()
+                raise
 
-    # wait for map workers to finish producing to reduce_queue
-    for p in map_workers:
-        p.join()
+    # -----------------
+    # 2) SHUFFLE stage (paralelizado)
+    # -----------------
+    # Particionar mapped_pairs en buckets por hash(key)
+    num_buckets = max(1, int(num_shuffle_tasks))
+    buckets = [[] for _ in range(num_buckets)]
+    for k, v in mapped_pairs:
+        idx = (hash(k) & 0x7FFFFFFF) % num_buckets
+        buckets[idx].append((k, v))
 
-    # signal reduce workers to stop (they will reduce accumulated and put result)
-    for _ in range(num_reduce_tasks):
-        reduce_queue.put(None)
+    # Cada bucket se transforma en dict {k: [v,...]} (esto puede correr en paralelo)
+    bucket_dicts = []
+    with ProcessPoolExecutor(max_workers=num_shuffle_tasks) as shuffle_executor:
+        shuffle_futures = [shuffle_executor.submit(_shuffle_bucket, b) for b in buckets]
+        for f in as_completed(shuffle_futures):
+            try:
+                bucket_dicts.append(f.result())
+            except Exception:
+                print("Exception in shuffle worker:")
+                traceback.print_exc()
+                raise
 
-    # IMPORTANT: collect results FROM result_queue BEFORE joining reduce workers
-    partials = []
-    for i in range(num_reduce_tasks):
-        try:
-            partial = result_queue.get(timeout=result_timeout)
-            partials.append(partial)
-        except queue.Empty:
-            # timeout esperando resultados: log y seguir intentado (o romper)
-            print(f"[parallel_mapreduce] timeout esperando resultado {i+1}/{num_reduce_tasks}")
-            # opcional: seguir intentando una vez más o continuar
-            # aquí continuation simple: break
-            break
+    # -----------------
+    # 3) REDUCE stage (paralelizado)
+    # -----------------
+    # Cada bucket_dict es independiente; aplicamos reduce_func por bucket (puede ser costoso)
+    partial_results = []
+    with ProcessPoolExecutor(max_workers=num_reduce_tasks) as reduce_executor:
+        reduce_futures = [reduce_executor.submit(reduce_func, bd) for bd in bucket_dicts]
+        for f in as_completed(reduce_futures):
+            try:
+                partial_results.append(f.result())  # cada resultado es dict
+            except Exception:
+                print("Exception in reduce worker:")
+                traceback.print_exc()
+                raise
 
-    # now join reduce workers (they should be able to exit because we consumed results)
-    for p in reduce_workers:
-        p.join(timeout=5.0)
-
-    # merge partials
-    final_result = {}
-    for partial in partials:
-        if not isinstance(partial, dict):
+    # -----------------
+    # Merge final
+    # -----------------
+    final = {}
+    for part in partial_results:
+        if not isinstance(part, dict):
             continue
-        for k, v in partial.items():
-            if isinstance(v, (int, float)):
-                final_result[k] = final_result.get(k, 0) + v
-            else:
-                final_result[k] = v
-    return final_result
+        _merge_dicts_sum_semantics(final, part)
+
+    return final
 
 # ------------------------------
 # Ejemplos de uso paralelo (manteniendo tus ejemplos)
@@ -648,24 +703,24 @@ def measure_serial(records):
     max_city, min_city = city_with_max_min(averages)
     print(f"Mayor: {max_city}, Menor: {min_city}")
     t1 = time.time()
-    return t1 - t0
+    return t1 - t0, counts, averages, max_city, min_city
 
-def measure_parallel(records, num_map=2, num_reduce=2):
+def measure_parallel(records, num_map=2, num_reduce=2, num_shuffle=2):
     t0 = time.time()
     print("\n=== Paralelo (demo) ===")
     # Parallel: count reads (this is additive so puede usar >1 reduce)
-    par_counts = parallel_mapreduce(records, map_count_reads, reduce_count_reads, num_map_tasks=3, num_reduce_tasks=2)
+    par_counts = parallel_mapreduce(records, map_count_reads, reduce_count_reads, num_map_tasks=num_map, num_shuffle_tasks=num_shuffle, num_reduce_tasks=num_reduce)
     print("Conteo de lecturas por ubicación (paralelo):", par_counts)
     print("Top sensores (paralelo):", top_n_sensors(par_counts, n=3))
 
     # Parallel: average AQI -> usar 1 reduce worker para evitar problemas de fusion de promedios
-    par_avg = parallel_mapreduce(records, map_avg_aqi, reduce_avg_aqi, num_map_tasks=num_map, num_reduce_tasks=num_reduce)
+    par_avg = parallel_mapreduce(records, map_avg_aqi, reduce_avg_aqi, num_map_tasks=num_map, num_shuffle_tasks=num_shuffle, num_reduce_tasks=num_reduce)
     print("Promedio AQI por ciudad (paralelo, 1 reduce):", par_avg)
     max_city_p, min_city_p = city_with_max_min(par_avg)
     print(f"Mayor (paralelo): {max_city_p}, Menor (paralelo): {min_city_p}")
 
     # Parallel: mapreduce for city sensor counts
-    par_sensors = parallel_mapreduce(records, map_city_sensors, reduce_sum, num_map_tasks=num_map, num_reduce_tasks=num_reduce)
+    par_sensors = parallel_mapreduce(records, map_city_sensors, reduce_sum, num_map_tasks=num_map, num_shuffle_tasks=num_shuffle, num_reduce_tasks=num_reduce)
     print("Sensores por ciudad (paralelo):", par_sensors)
     t1 = time.time()
     return t1 - t0
@@ -678,17 +733,18 @@ def run_benchmark(input_data, worker_configs):
     results = []
 
     # medir serial
-    serial_time = measure_serial(input_data)
+    serial_time, counts, averages, max_city, min_city = measure_serial(input_data)
 
-    for (m, r) in worker_configs:
-        parallel_time = measure_parallel(input_data, m, r)
+    for (m, r, s) in worker_configs:
+        parallel_time = measure_parallel(input_data, m, r, s)
 
         speedup = serial_time / parallel_time
-        efficiency = speedup / (m + r)
+        efficiency = speedup / (m + r + s)
 
         results.append({
             "Map workers": m,
             "Reduce workers": r,
+            "Shuffle workers": s,
             "Total workers": m + r,
             "Serial time (s)": serial_time,
             "Parallel time (s)": parallel_time,
@@ -696,147 +752,124 @@ def run_benchmark(input_data, worker_configs):
             "Efficiency": efficiency,
         })
 
-    return pd.DataFrame(results)
+    return pd.DataFrame(results), counts, averages, max_city, min_city
 
 # ---------------------------------------------------------
 # Ejemplo de uso
 # ---------------------------------------------------------
 
-### ALGORITMO 4
-# Datos de ejemplo: muchos sensores en algunas ciudades
-example_records = [
-    {"sensorLocation": "Bogota"}, {"sensorLocation": "Bogota"}, {"sensorLocation": "Bogota"},
-    {"sensorLocation": "Medellin"}, {"sensorLocation": "Medellin"},
-    {"sensorLocation": "Cali"}, {"sensorLocation": "Cali"}, {"sensorLocation": "Cali"}, {"sensorLocation": "Cali"},
-    {"sensorLocation": "Barranquilla"}
-]
+if __name__ == "__main__":
 
-costs = estimate_monitoring_costs(example_records)
-print("Resumen costos (Algoritmo 4):")
-print("  Ciudades detectadas:", costs["num_cities"])
-print("  Total sensores:", costs["total_sensors"])
-print("  Costo total estimado (USD/año): {:.2f}".format(costs["total_monitoring_cost_usd_per_year"]))
-print("  Almacenamiento anual (hourly) GB: {:.2f}".format(costs["storage_hourly_gb_per_year"]))
-print("  Almacenamiento anual (daily)  GB: {:.2f}".format(costs["storage_daily_gb_per_year"]))
-print("  Estimaciones de procesamiento (por nodos):")
-for n, info in costs["processing_estimates_by_nodes"].items():
-    print("    nodos={}: tiempo(h)={:.2f}, costo_usd={:.2f}, nodos_efectivos={:.1f}".format(
-        n, info["wall_time_hours"], info["cost_usd"], info["speedup"]))
+    ### ALGORITMO 4
+    # Datos de ejemplo: muchos sensores en algunas ciudades
+    example_records = [
+        {"sensorLocation": "Bogota"}, {"sensorLocation": "Bogota"}, {"sensorLocation": "Bogota"},
+        {"sensorLocation": "Medellin"}, {"sensorLocation": "Medellin"},
+        {"sensorLocation": "Cali"}, {"sensorLocation": "Cali"}, {"sensorLocation": "Cali"}, {"sensorLocation": "Cali"},
+        {"sensorLocation": "Barranquilla"}
+    ]
 
-### ALGORITMO 5
-# dataset base de ejemplo (10 registros)
-sample_records = [{"sensorLocation": "Bogota", "aqiValue": 100}] * 10
+    costs = estimate_monitoring_costs(example_records)
+    print("Resumen costos (Algoritmo 4):")
+    print("  Ciudades detectadas:", costs["num_cities"])
+    print("  Total sensores:", costs["total_sensors"])
+    print("  Costo total estimado (USD/año): {:.2f}".format(costs["total_monitoring_cost_usd_per_year"]))
+    print("  Almacenamiento anual (hourly) GB: {:.2f}".format(costs["storage_hourly_gb_per_year"]))
+    print("  Almacenamiento anual (daily)  GB: {:.2f}".format(costs["storage_daily_gb_per_year"]))
+    print("  Estimaciones de procesamiento (por nodos):")
+    for n, info in costs["processing_estimates_by_nodes"].items():
+        print("    nodos={}: tiempo(h)={:.2f}, costo_usd={:.2f}, nodos_efectivos={:.1f}".format(
+            n, info["wall_time_hours"], info["cost_usd"], info["speedup"]))
 
-perf = evaluate_performance(sample_records,
-                            nodes_list=[1,2,5,10],
-                            base_time_per_record=0.04,
-                            event_types=("normal", "critical"),
-                            event_multipliers={"normal": 1.0, "critical": 3.0},
-                            alert_rate_multiplier=4.0,
-                            nodes_cost_per_hour=0.25)
+    ### ALGORITMO 5
+    # dataset base de ejemplo (10 registros)
+    sample_records = [{"sensorLocation": "Bogota", "aqiValue": 100}] * 10
 
-print("\nResumen rendimiento (Algoritmo 5):")
-for event in perf:
-    print("Evento:", event)
-    for n in perf[event]:
-        info = perf[event][n]
-        print("  nodos={}: registros={}, tiempo(h)={:.3f}, costo=${:.2f}, throughput={:.2f} rec/s".format(
-            n, info["num_records"], info["wall_time_hours"], info["cost_usd"], info["throughput_records_per_sec"]
-        ))
+    perf = evaluate_performance(sample_records,
+                                nodes_list=[1,2,5,10],
+                                base_time_per_record=0.04,
+                                event_types=("normal", "critical"),
+                                event_multipliers={"normal": 1.0, "critical": 3.0},
+                                alert_rate_multiplier=4.0,
+                                nodes_cost_per_hour=0.25)
+
+    print("\nResumen rendimiento (Algoritmo 5):")
+    for event in perf:
+        print("Evento:", event)
+        for n in perf[event]:
+            info = perf[event][n]
+            print("  nodos={}: registros={}, tiempo(h)={:.3f}, costo=${:.2f}, throughput={:.2f} rec/s".format(
+                n, info["num_records"], info["wall_time_hours"], info["cost_usd"], info["throughput_records_per_sec"]
+            ))
 
 
-# # Configuraciones de trabajadores a evaluar
-# worker_configs = [
-#     (1, 1),
-#     (2, 2),
-#     (3, 2),
-#     (4, 2),
-#     (6, 2),
-# ]
+    # Configuraciones de trabajadores a evaluar
+    worker_configs = [(1, 1, 1),(2, 2, 2),(3, 2, 2),(4, 2, 2),(6, 2, 2)]
 
-# input_data = [
-#     {"sensorLocation": "Bogota", "aqiValue": 120},
-#     {"sensorLocation": "Bogota", "aqiValue": 130},
-#     {"sensorLocation": "Medellin", "aqiValue": 80},
-#     {"sensorLocation": "Cali", "aqiValue": 200},
-#     {"sensorLocation": "Medellin", "aqiValue": 90},
-#     {"sensorLocation": "Cali", "aqiValue": 150},
-#     {"sensorLocation": "Bogota", "aqiValue": 100},
-#     {"sensorLocation": "Cali", "aqiValue": 220},
-#     {"sensorLocation": "Bogota", "aqiValue": 120},
-#     {"sensorLocation": "Bogota", "aqiValue": 130},
-#     {"sensorLocation": "Medellin", "aqiValue": 80},
-#     {"sensorLocation": "Cali", "aqiValue": 200},
-#     {"sensorLocation": "Medellin", "aqiValue": 90},
-#     {"sensorLocation": "Cali", "aqiValue": 150},
-#     {"sensorLocation": "Bogota", "aqiValue": 100},
-#     {"sensorLocation": "Cali", "aqiValue": 220},
-#     {"sensorLocation": "Bogota", "aqiValue": 120},
-#     {"sensorLocation": "Bogota", "aqiValue": 130},
-#     {"sensorLocation": "Medellin", "aqiValue": 80},
-#     {"sensorLocation": "Cali", "aqiValue": 200},
-#     {"sensorLocation": "Medellin", "aqiValue": 90},
-#     {"sensorLocation": "Cali", "aqiValue": 150},
-#     {"sensorLocation": "Bogota", "aqiValue": 100},
-#     {"sensorLocation": "Cali", "aqiValue": 220},
-#     {"sensorLocation": "Bogota"},   # sin aqiValue -> ignorado por map_avg_aqi
-#     {"aqiValue": 50},               # sin sensorLocation -> ignorado
-# ]
+    input_data = [
+        {"sensorLocation": "Bogota", "aqiValue": 120},
+        {"sensorLocation": "Bogota", "aqiValue": 130},
+        {"sensorLocation": "Medellin", "aqiValue": 80},
+        {"sensorLocation": "Cali", "aqiValue": 200},
+        {"sensorLocation": "Medellin", "aqiValue": 90},
+        {"sensorLocation": "Cali", "aqiValue": 150},
+        {"sensorLocation": "Bogota", "aqiValue": 100},
+        {"sensorLocation": "Cali", "aqiValue": 220},
+        {"sensorLocation": "Bogota", "aqiValue": 120},
+        {"sensorLocation": "Bogota", "aqiValue": 130},
+        {"sensorLocation": "Medellin", "aqiValue": 80},
+        {"sensorLocation": "Cali", "aqiValue": 200},
+        {"sensorLocation": "Medellin", "aqiValue": 90},
+        {"sensorLocation": "Cali", "aqiValue": 150},
+        {"sensorLocation": "Bogota", "aqiValue": 100},
+        {"sensorLocation": "Cali", "aqiValue": 220},
+        {"sensorLocation": "Bogota", "aqiValue": 120},
+        {"sensorLocation": "Bogota", "aqiValue": 130},
+        {"sensorLocation": "Medellin", "aqiValue": 80},
+        {"sensorLocation": "Cali", "aqiValue": 200},
+        {"sensorLocation": "Medellin", "aqiValue": 90},
+        {"sensorLocation": "Cali", "aqiValue": 150},
+        {"sensorLocation": "Bogota", "aqiValue": 100},
+        {"sensorLocation": "Cali", "aqiValue": 220},
+        {"sensorLocation": "Bogota"},   # sin aqiValue -> ignorado por map_avg_aqi
+        {"aqiValue": 50},               # sin sensorLocation -> ignorado
+    ]
 
-# # Benchmark
-# df = run_benchmark(
-#     input_data=input_data,
-#     worker_configs=worker_configs
-# )
+    # Benchmark
+    df = run_benchmark(
+        input_data=input_data,
+        worker_configs=worker_configs
+    )
 
-# print(df)
+    print(df)
 
-# ---------------------------------------------------------
-# Visualizaciones estilo dashboard
-# ---------------------------------------------------------
+    # ---------------------------------------------------------
+    # Visualizaciones estilo dashboard
+    # ---------------------------------------------------------
 
-def testMapReduce(input_data, worker_configs):
-    df = run_benchmark(input_data=input_data, worker_configs=worker_configs)
+    # --- Tiempo de ejecución ---
+    plt.figure(figsize=(10,5))
+    plt.bar(["Serial"], [df["Serial time (s)"].iloc[0]])
+    plt.bar([f"{m+r} workers" for m,r in zip(df["Map workers"], df["Reduce workers"])],
+            df["Parallel time (s)"])
+    plt.ylabel("Tiempo (segundos)")
+    plt.title("Tiempo de ejecución: Serial vs Paralelo")
+    plt.show()
 
-    # Asegurarnos de que df no esté vacío
-    if df.empty:
-        return pd.DataFrame()
+     # --- Speedup ---
+    plt.figure(figsize=(10,5))
+    plt.plot(df["Total workers"], df["Speedup"], marker="o")
+    plt.xlabel("Número total de procesos (map + reduce)")
+    plt.ylabel("Speedup")
+    plt.title("Speedup al aumentar los Workers")
+    plt.grid(True)
+    plt.show()
 
-    # Obtener tiempos como lista (convertir la Series a lista)
-    serial_time = df["Serial time (s)"].iloc[0]
-    parallel_times = df["Parallel time (s)"].tolist()
-
-    # Etiquetas: "Serial" y luego "<m+r> workers" por cada fila
-    labels = ["Serial"] + [f"{m+r} workers" for m, r in zip(df["Map workers"], df["Reduce workers"])]
-
-    # Construir DataFrame con índice = labels y una columna 'Time (s)'
-    chart_data = pd.DataFrame({"Time (s)": [serial_time] + parallel_times}, index=labels)
-
-    return chart_data
-
-# --- Tiempo de ejecución ---
-# plt.figure(figsize=(10,5))
-# plt.bar(["Serial"], [df["Serial time (s)"].iloc[0]])
-# plt.bar([f"{m+r} workers" for m,r in zip(df["Map workers"], df["Reduce workers"])],
-#         df["Parallel time (s)"])
-# plt.ylabel("Tiempo (segundos)")
-# plt.title("Tiempo de ejecución: Serial vs Paralelo")
-# plt.show()
-
-# # --- Speedup ---
-# plt.figure(figsize=(10,5))
-# plt.plot(df["Total workers"], df["Speedup"], marker="o")
-# plt.xlabel("Número total de procesos (map + reduce)")
-# plt.ylabel("Speedup")
-# plt.title("Speedup al aumentar los Workers")
-# plt.grid(True)
-# plt.show()
-
-# # --- Eficiencia ---
-# plt.figure(figsize=(10,5))
-# plt.plot(df["Total workers"], df["Efficiency"], marker="o")
-# plt.xlabel("Número total de procesos")
-# plt.ylabel("Eficiencia")
-# plt.title("Eficiencia paralela")
-# plt.grid(True)
-# plt.show()
+     # --- Eficiencia ---
+    plt.figure(figsize=(10,5))
+    plt.plot(df["Total workers"], df["Efficiency"], marker="o")
+    plt.xlabel("Número total de procesos")
+    plt.ylabel("Eficiencia")
+    plt.title("Eficiencia paralela")
+    plt.grid(True)
+    plt.show()
