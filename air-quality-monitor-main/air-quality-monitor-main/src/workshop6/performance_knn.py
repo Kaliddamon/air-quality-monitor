@@ -216,10 +216,9 @@ def predict_next_day_knn_with_neighbors(sensors, neighbors_index, k=5, selection
     return true_vals, pred_vals
 
 
-def evaluate_knn_performance(sensors, ks=[1,3,5,7], selection_methods=['pollution','geographic'], weightings=['uniform','pollution_distance','geo_distance']):
+def evaluate_knn_performance(sensors, k=3, selection_methods=['pollution','geographic'], weightings=['uniform','pollution_distance','geo_distance']):
     # Precompute neighbors once with max_k = max(ks)
-    max_k = max(ks)
-    neigh_idx = build_neighbors_index(sensors, max_k=max_k, selection_methods=selection_methods)
+    neigh_idx = build_neighbors_index(sensors, max_k=k, selection_methods=selection_methods)
 
     resultsSel = {}
     for sel in selection_methods:
@@ -320,6 +319,7 @@ def test_geo_distance_effect_optimized(sensors, neighbors_index, k=5, thresholds
             "n_points": len(true_vals)
         }
     return out
+
 
 
 
