@@ -49,7 +49,7 @@ def predict_next_day_knn(sensors, k=5, selection_method='pollution', weighting='
     pred_vals = []
     
     for s in sensors:
-        qid = s["id"]
+        qid = s["_id"]
         if selection_method == 'pollution':
             neigh = knn_pollution(sensors, query_id=qid, k=k, use_average=False)
             # neigh: list of (pollution_distance, sensor)
@@ -134,7 +134,7 @@ def test_geo_distance_effect(sensors, k=5, thresholds=[5,15,30,60], selection_me
 
 
         for s in sensors:
-            qid = s["id"]
+            qid = s["_id"]
             neigh = knn_pollution(sensors, query_id=qid, k=20, use_average=False)  # obtener muchos candidatos
             # filtrar por distancia geográfica
             filtered = []
@@ -171,6 +171,7 @@ def test_geo_distance_effect(sensors, k=5, thresholds=[5,15,30,60], selection_me
             "n_points": len(true_vals)
         }
     return out
+
 
 
 
