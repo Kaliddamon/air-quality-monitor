@@ -64,8 +64,8 @@ def testMapReduce(input_data, worker_configs):
 
     result = {
         "chart_data" : chart_data,
-        "counts" : counts,
-        "averages" : averages,
+        "counts" : pd.DataFrame(counts),
+        "averages" : pd.DataFrames(averages),
         "max_city" : max_city,
         "min_city" : min_city
     }
@@ -152,7 +152,7 @@ def reduce_avg_aqi(shuffled):
             "Ciudad": k,
             "Promedio": average.get(k),
         })
-    return df, averages
+    return df
 
 def city_with_max_min(averages):
     """
@@ -161,15 +161,19 @@ def city_with_max_min(averages):
     """
     if not averages:
         return (("N/A", float('nan')), ("N/A", float('nan')))
-    items = list(averages.items())
     # Encontrar max y min manualmente
-    max_item = items[0]
-    min_item = items[0]
-    for it in items[1:]:
-        if it[1] > max_item[1]:
-            max_item = it
-        if it[1] < min_item[1]:
-            min_item = it
+    primer_elemento = averages.get(0)
+    ciudad = primer_elemento.get("Ciudad")
+    promedio = primer_elemento.get("Promedio")
+    
+    max_item = (ciudad, promedio)
+    min_item = (ciudad, promedio)
+    for average in averages:
+        promedio = average.get("Promedio")
+        if promedio > max_item[1]:
+            max_item = (average.get("Ciudad"), promedio)
+        if promedio < min_item[1]:
+            min_item = (average.get("Ciudad"), promedio)
     return max_item, min_item
 
 # ------------------------------
@@ -708,9 +712,9 @@ def measure_serial(records):
     # Algoritmo 2: promedio AQI por ciudad (serial)
     mapped2 = map_avg_aqi(records)
     shuffled2 = shuffle(mapped2)
-    df_averages, averages = reduce_avg_aqi(shuffled2)
-    print("Promedio AQI por ciudad (serial):", averages)
-    max_city, min_city = city_with_max_min(averages)
+    df_averages = reduce_avg_aqi(shuffled2)
+    print("Promedio AQI por ciudad (serial):", df_averages)
+    max_city, min_city = city_with_max_min(df_averages)
     print(f"Mayor: {max_city}, Menor: {min_city}")
     t1 = time.time()
     return t1 - t0, counts, df_averages, max_city, min_city
