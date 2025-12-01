@@ -385,7 +385,7 @@ if st.button("Ejecutar análisis W4"):
     
     with col2:
         st.subheader("Menor")
-        st.metric(min_city[1], f"{min_city[1]:.2f}" if min_city[1] is not None else "N/D")
+        st.metric(min_city[0], f"{min_city[1]:.2f}" if min_city[1] is not None else "N/D")
 
     
     
@@ -393,6 +393,7 @@ if st.button("Ejecutar análisis W4"):
     
 
     
+
 
 
 
