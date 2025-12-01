@@ -99,7 +99,10 @@ def reduce_count_reads(shuffled):
         for val in values:
             s += val
         total[k] = s
-        df.append(total)
+        df.append(
+            "Ciudad": k,
+            "Conteo": total.get(k)
+        )
     return df
 
 def top_n_sensors(counts, n=10):
@@ -147,7 +150,10 @@ def reduce_avg_aqi(shuffled):
         else:
             average[k] = float('nan')
             averages[k] = float('nan')
-        df.append(average)
+        df.append({
+            "Ciudad": k,
+            "Promedio": average.get(k)
+        })
     return df, averages
 
 def city_with_max_min(averages):
