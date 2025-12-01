@@ -1,3 +1,5 @@
+import math
+
 def euclidean(v1, v2):
     s = 0.0
     for a, b in zip(v1, v2):
@@ -18,3 +20,4 @@ def encode_source(src):
     if src == "industrial":
         return 1.0
     return 0.5  # mixed
+
