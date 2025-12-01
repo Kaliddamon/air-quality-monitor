@@ -241,57 +241,86 @@ def evaluate_knn_performance(sensors, ks=[1,3,5,7], selection_methods=['pollutio
 
     return resultsSel
 
-def test_geo_distance_effect(sensors, k=5, thresholds=[5,15,30,60], selection_method='pollution', weighting='uniform'):
+def test_geo_distance_effect_optimized(sensors, neighbors_index, k=5, thresholds=[5,15,30,60], selection_method='pollution', weighting='uniform'):
     """
-    Prueba cómo el limitar vecinos por distancia geográfica afecta la predicción.
-    Para cada threshold, selecciona vecinos por pollution-similarity pero filtra
-    aquellos con coord distance <= threshold. Si un sensor no tiene vecinos en el umbral,
-    lo excluye.
+    Versión optimizada de test_geo_distance_effect que reutiliza neighbors_index.
+    neighbors_index debe provenir de build_neighbors_index(sensors, max_k=20, ...)
+    neighbors_index["neighbors_pollution"][qid] -> list of (pdist, idx)
+    neighbors_index["C"] -> array shape (n,2) de coords
+    neighbors_index["id_to_idx"] -> map _id -> idx
     """
     out = {}
+    id_to_idx = neighbors_index["id_to_idx"]
+    neigh_poll = neighbors_index["neighbors_pollution"]
+    C = neighbors_index["C"]  # numpy array (n,2)
+    
+    # Precompute for speed: map qid -> list[(pdist, coordd, idx)] using neigh_poll candidates
+    # This avoids recomputing coordd each threshold loop.
+    precomputed = {}
+    for s in sensors:
+        qid = s["_id"]
+        i = id_to_idx[qid]
+        cand = neigh_poll.get(qid, [])  # list of (pdist, idx)
+        combos = []
+        for pdist, idx in cand:
+            # compute coord distance between sensor i and neighbor idx using C array
+            coordd = float(np.linalg.norm(C[i] - C[idx]))
+            combos.append((float(pdist), coordd, int(idx)))
+        # keep combos sorted by pdist (ascending) so choosing top-k is faster
+        combos.sort(key=lambda x: x[0])
+        precomputed[qid] = combos
+
+    # Now for each threshold we scan the short candidate lists
     for th in thresholds:
         true_vals = []
         pred_vals = []
-
-
         for s in sensors:
             qid = s["_id"]
-            neigh = knn_pollution(sensors, query_id=qid, k=20, use_average=False)  # obtener muchos candidatos
-            # filtrar por distancia geográfica
-            filtered = []
-            for pdist, nb in neigh:
-                coordd = dist2d(s["coords"], nb["coords"])
-                if coordd <= th:
-                    filtered.append((pdist, nb))
+            true_val = s.get("nextDayPollution")
+            if true_val is None:
+                continue  # no ground truth; saltar
+
+            combos = precomputed.get(qid, [])
+            # filter by coord distance threshold
+            filtered = [(pdist, coordd, idx) for pdist, coordd, idx in combos if coordd <= th]
             if not filtered:
                 continue
-            # tomar los k mejores según polution_distance entre los filtrados
-            filtered.sort(key=lambda x: x[0])
+
+            # already sorted by pdist, take up to k best
             chosen = filtered[:k]
             weights = []
             vals = []
-            for pdist, nb in chosen:
-                vals.append(nb.get("nextDayPollution"))
+            for pdist, coordd, idx in chosen:
+                nb = sensors[idx]
+                v = nb.get("nextDayPollution")
+                if v is None:
+                    continue
+                vals.append(v)
                 if weighting == 'uniform':
                     weights.append(1.0)
                 elif weighting == 'pollution_distance':
                     weights.append(1.0 / (1.0 + pdist))
-                else:
-                    coordd = dist2d(s["coords"], nb["coords"])
+                else:  # geo_distance
                     weights.append(1.0 / (1.0 + coordd))
-            combined = [(w,v) for w,v in zip(weights, vals) if v is not None]
-            if not combined:
+
+            # filter out None values already done; check
+            if not vals or not weights:
                 continue
-            total_w = sum(w for w,_ in combined)
-            pred = sum(w*v for w,v in combined) / total_w
-            true_vals.append(s.get("nextDayPollution"))
+            total_w = sum(weights)
+            if total_w <= 0:
+                continue
+            pred = sum(w * v for w, v in zip(weights, vals)) / total_w
+
+            true_vals.append(true_val)
             pred_vals.append(pred)
+
         out[th] = {
             "MAE": mae(true_vals, pred_vals),
             "RMSE": rmse(true_vals, pred_vals),
             "n_points": len(true_vals)
         }
     return out
+
 
 
 
