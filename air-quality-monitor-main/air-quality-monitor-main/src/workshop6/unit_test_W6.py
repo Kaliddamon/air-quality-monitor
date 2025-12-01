@@ -3,6 +3,8 @@ from workshop6.geographic_knn import knn_geographic
 from workshop6.alert_knn import knn_alert
 from workshop6.performance_knn import *
 
+import pandas as pd
+
 
 def generate_sample_sensors(n=20, seed=42):
     random.seed(seed)
@@ -120,6 +122,7 @@ def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
         print(">>> test_geo_distance_effect raised:", e)
     
     return pd.DataFrame(simple_knn), pd.DataFrame(geographic_knn), pd.DataFrame(alert_knn), perf, geo_effect
+
 
 
 
