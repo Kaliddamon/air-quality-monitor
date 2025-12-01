@@ -53,7 +53,7 @@ def testMapReduce(input_data, worker_configs):
         return {
             "chart_data" : pd.DataFrame(),
             "counts" : pd.DataFrame(counts),
-            "averages" : pd.DataFrames(averages),
+            "averages" : pd.DataFrame(averages),
             "max_city" : max_city,
             "min_city" : min_city
         }
