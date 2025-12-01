@@ -697,7 +697,6 @@ def measure_serial(records):
     shuffled1 = shuffle(mapped1)
     counts = reduce_count_reads(shuffled1)
     print("Conteo de lecturas por ubicación (serial):", counts)
-    print("Top sensores (más activos):", top_n_sensors(counts, n=3))
 
     # Algoritmo 2: promedio AQI por ciudad (serial)
     mapped2 = map_avg_aqi(records)
@@ -715,7 +714,6 @@ def measure_parallel(records, num_map=2, num_reduce=2, num_shuffle=2):
     # Parallel: count reads (this is additive so puede usar >1 reduce)
     par_counts = parallel_mapreduce(records, map_count_reads, reduce_count_reads, num_map_tasks=num_map, num_shuffle_tasks=num_shuffle, num_reduce_tasks=num_reduce)
     print("Conteo de lecturas por ubicación (paralelo):", par_counts)
-    print("Top sensores (paralelo):", top_n_sensors(par_counts, n=3))
 
     # Parallel: average AQI -> usar 1 reduce worker para evitar problemas de fusion de promedios
     par_avg = parallel_mapreduce(records, map_avg_aqi, reduce_avg_aqi, num_map_tasks=num_map, num_shuffle_tasks=num_shuffle, num_reduce_tasks=num_reduce)
