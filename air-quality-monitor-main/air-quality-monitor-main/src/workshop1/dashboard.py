@@ -401,7 +401,7 @@ if st.button("Ejecutar análisis W6"):
 
     if city:
         df_knn = df.copy()
-        df_knn = df_knn[df_knn["sensorLocation"].isin(city)]
+        df_knn = df_knn[df_knn["sensorLocation"].isin([city])]
         _id = st.selectbox(f"Selecciona uno de los sensores de la ciudad {city}", df_knn["_id"])
 
         w6_data = run_w6_from_records(records, qid)
@@ -441,6 +441,7 @@ if st.button("Ejecutar análisis W6"):
     
 
     
+
 
 
 
