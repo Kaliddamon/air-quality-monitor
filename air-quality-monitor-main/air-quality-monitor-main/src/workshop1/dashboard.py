@@ -376,14 +376,16 @@ if st.button("Ejecutar análisis W4"):
 
     col1, col2 = st.columns(2)
 
+    max_city = w4_data.get("max_city")
+    min_city = w4_data.get("min_city")
+
     with col1:
         st.subheader("Mayor")
-        st.metric("Mayor", f"{w4_data.get("max_city"):.2f}" if pm.get("max_city") is not None else "N/D")
+        st.metric(max_city[0], f"{max_city[1]:.2f}" if max_city[1] is not None else "N/D")
     
     with col2:
         st.subheader("Menor")
-        pm = global_stats.get("PM25", {})
-        st.metric("Menor", f"{w4_data.get("min_city"):.2f}" if pm.get("min_city") is not None else "N/D")
+        st.metric(min_city[1], f"{min_city[1]:.2f}" if min_city[1] is not None else "N/D")
 
     
     
@@ -391,6 +393,7 @@ if st.button("Ejecutar análisis W4"):
     
 
     
+
 
 
 
