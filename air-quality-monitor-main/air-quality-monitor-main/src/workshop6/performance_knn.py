@@ -41,75 +41,194 @@ def rmse(values_true, values_pred):
         s += d * d
     return math.sqrt(s / n)
 
-def predict_next_day_knn(sensors, k=5, selection_method='pollution', weighting='uniform'):
+# requiere numpy; sklearn es opcional (mejor rendimiento si está presente)
+import numpy as np
+
+# intentamos usar sklearn si está disponible (mejor para datasets grandes)
+try:
+    from sklearn.neighbors import NearestNeighbors
+    SKLEARN_AVAILABLE = True
+except Exception:
+    SKLEARN_AVAILABLE = False
+
+def build_neighbors_index(sensors, max_k=7, selection_methods=('pollution','geographic')):
     """
-    selection_method: 'pollution' or 'geographic'
-    weighting: 'uniform', 'pollution_distance' (1/(1+poll_dist)), 'geo_distance' (1/(1+coord_dist))
-    Retorna (list_true, list_pred)
+    Precomputar vecinos para cada sensor:
+      - devuelve dicts: neighbors_pollution[qid] = [(pdist, idx), ... up to max_k]
+                        neighbors_geo[qid] = [(coord_dist, idx), ... up to max_k]
+    idx es el índice en la lista sensors (más barato que copiar objetos).
     """
+    n = len(sensors)
+    id_to_idx = {s["_id"]: i for i, s in enumerate(sensors)}
+    idx_to_id = {i: s["_id"] for i, s in enumerate(sensors)}
+
+    # Prepara arrays
+    # pollution vectors: shape (n, 7) or variable length -> we will pad/handle missing
+    pollution_list = []
+    coords_list = []
+    for s in sensors:
+        pl = s.get("pollutionLevels7")
+        if pl is None:
+            pollution_list.append([np.nan]*7)
+        else:
+            pollution_list.append(list(pl))
+        coords_list.append(tuple(s.get("coords", (np.nan, np.nan))))
+    P = np.array(pollution_list, dtype=float)   # (n,7)
+    C = np.array(coords_list, dtype=float)      # (n,2)
+
+    neighbors_pollution = {s["_id"]: [] for s in sensors}
+    neighbors_geo = {s["_id"]: [] for s in sensors}
+
+    if SKLEARN_AVAILABLE:
+        # Pollution NN (euclidean on 7-dim). We ask for max_k+1 because result includes self.
+        nn_poll = NearestNeighbors(n_neighbors=min(max_k+1, n), metric='euclidean')
+        nn_poll.fit(np.nan_to_num(P, nan=0.0))  # nan->0 fallback; ensure behavior acceptable
+        dists_p, idxs_p = nn_poll.kneighbors(np.nan_to_num(P, nan=0.0), return_distance=True)
+
+        nn_geo = NearestNeighbors(n_neighbors=min(max_k+1, n), metric='euclidean')
+        nn_geo.fit(C)
+        dists_g, idxs_g = nn_geo.kneighbors(C, return_distance=True)
+
+        for i in range(n):
+            qid = idx_to_id[i]
+            # build pollution neighbors, skip self (first neighbor usually self with dist 0)
+            pairs_p = []
+            for dist, j in zip(dists_p[i], idxs_p[i]):
+                if i == j:
+                    continue
+                pairs_p.append((float(dist), int(j)))
+                if len(pairs_p) >= max_k:
+                    break
+            neighbors_pollution[qid] = pairs_p
+
+            pairs_g = []
+            for dist, j in zip(dists_g[i], idxs_g[i]):
+                if i == j:
+                    continue
+                pairs_g.append((float(dist), int(j)))
+                if len(pairs_g) >= max_k:
+                    break
+            neighbors_geo[qid] = pairs_g
+
+    else:
+        # Fallback: vectorized pairwise distances (cost O(n^2) memory/time for large n)
+        # Use this only para n moderado (<~5000). Otherwise instalar sklearn.
+        # Pollution distances
+        # compute squared distances efficiently
+        # handle NaNs by replacing them with zeros (or better: mask)
+        P0 = np.nan_to_num(P, nan=0.0)
+        # coords
+        C0 = np.nan_to_num(C, nan=0.0)
+        # compute pairwise distances
+        # pollution
+        diff_p = P0[:, None, :] - P0[None, :, :]  # shape n,n,7 (may be large)
+        dists_p = np.sqrt(np.sum(diff_p * diff_p, axis=2))  # n x n
+        np.fill_diagonal(dists_p, np.inf)
+        # geographic
+        diff_g = C0[:, None, :] - C0[None, :, :]
+        dists_g = np.sqrt(np.sum(diff_g * diff_g, axis=2))
+        np.fill_diagonal(dists_g, np.inf)
+
+        for i in range(n):
+            qid = idx_to_id[i]
+            idxs_p = np.argsort(dists_p[i])[:max_k]
+            neighbors_pollution[qid] = [(float(dists_p[i, j]), int(j)) for j in idxs_p]
+
+            idxs_g = np.argsort(dists_g[i])[:max_k]
+            neighbors_geo[qid] = [(float(dists_g[i, j]), int(j)) for j in idxs_g]
+
+    # return also useful helpers
+    return {
+        "id_to_idx": id_to_idx,
+        "idx_to_id": idx_to_id,
+        "neighbors_pollution": neighbors_pollution,
+        "neighbors_geo": neighbors_geo,
+        "P": P,
+        "C": C
+    }
+
+
+def predict_next_day_knn_with_neighbors(sensors, neighbors_index, k=5, selection_method='pollution', weighting='uniform'):
+    """
+    Versión que usa vecinos precomputados (neighbors_index).
+    neighbors_pollution[qid] -> list of (pdist, idx)
+    neighbors_geo[qid] -> list of (coord_dist, idx)
+    """
+    id_to_idx = neighbors_index["id_to_idx"]
+    idx_to_id = neighbors_index["idx_to_id"]
+    neigh_poll = neighbors_index["neighbors_pollution"]
+    neigh_geo = neighbors_index["neighbors_geo"]
+
     true_vals = []
     pred_vals = []
-    
+
     for s in sensors:
         qid = s["_id"]
+        true = s.get("nextDayPollution")
+        if true is None:
+            continue
+
         if selection_method == 'pollution':
-            neigh = knn_pollution(sensors, query_id=qid, k=k, use_average=False)
-            # neigh: list of (pollution_distance, sensor)
-            # prepare arrays
-            if not neigh:
-                continue
+            neigh = neigh_poll.get(qid, [])[:k]
+            # neigh: (pdist, idx)
             weights = []
             vals = []
-            for pdist, nb in neigh:
-                vals.append(nb.get("nextDayPollution", None))
+            for pdist, idx in neigh:
+                nb = sensors[idx]
+                v = nb.get("nextDayPollution")
+                if v is None:
+                    continue
+                vals.append(v)
                 if weighting == 'uniform':
                     weights.append(1.0)
                 elif weighting == 'pollution_distance':
                     weights.append(1.0 / (1.0 + pdist))
                 else:  # geo_distance fallback
-                    coordd = dist2d(s["coords"], nb["coords"])
+                    coordd = float(np.linalg.norm(np.array(s.get("coords", (0,0))) - np.array(nb.get("coords", (0,0)))))
                     weights.append(1.0 / (1.0 + coordd))
-        else:  # geographic selection
-            neigh = knn_geographic(sensors, query_id=qid, k=k)
-            if not neigh:
-                continue
+        else:
+            neigh = neigh_geo.get(qid, [])[:k]
             weights = []
             vals = []
-            for gscore, nb in neigh:
-                vals.append(nb.get("nextDayPollution", None))
+            for coordd, idx in neigh:
+                nb = sensors[idx]
+                v = nb.get("nextDayPollution")
+                if v is None:
+                    continue
+                vals.append(v)
                 if weighting == 'uniform':
                     weights.append(1.0)
                 elif weighting == 'geo_distance':
-                    # approximate: use coord distance from gscore components? need coords
-                    coordd = dist2d(s["coords"], nb["coords"])
                     weights.append(1.0 / (1.0 + coordd))
-                else:  # pollution_distance fallback: compute pollution euclid
-                    pdist = euclidean(s["pollutionLevels7"], nb["pollutionLevels7"])
+                else:  # pollution_distance fallback
+                    # compute pollution euclid on the fly (cheap since k small)
+                    pdist = float(np.linalg.norm(np.array(s.get("pollutionLevels7", [0]*7)) - np.array(nb.get("pollutionLevels7", [0]*7))))
                     weights.append(1.0 / (1.0 + pdist))
 
-        # filter out neighbors without nextDayPollution (shouldn't happen here)
-        combined = []
-        for w, v in zip(weights, vals):
-            if v is None:
-                continue
-            combined.append((w, v))
-        if not combined:
+        if not vals or not weights:
             continue
-        # weighted average
-        total_w = sum(w for w, _ in combined)
-        pred = sum(w * v for w, v in combined) / total_w
-        true_vals.append(s.get("nextDayPollution"))
+        total_w = sum(weights)
+        if total_w == 0:
+            continue
+        pred = sum(w * v for w, v in zip(weights, vals)) / total_w
+        true_vals.append(true)
         pred_vals.append(pred)
     return true_vals, pred_vals
 
-def evaluate_knn_performance(sensors, ks=[1,3,5,7], selection_methods=['pollution','geographic'], weightings=['uniform','pollution_distance','geo_distance']):
+
+def evaluate_knn_performance_optimized(sensors, ks=[1,3,5,7], selection_methods=['pollution','geographic'], weightings=['uniform','pollution_distance','geo_distance']):
+    # Precompute neighbors once with max_k = max(ks)
+    max_k = max(ks)
+    neigh_idx = build_neighbors_index(sensors, max_k=max_k, selection_methods=selection_methods)
+
     resultsSel = {}
     for sel in selection_methods:
         resultsWeight = {}
         for w in weightings:
             resultsK = {}
+            # We can compute for each k using the SAME neighbors index
             for k in ks:
-                truev, predv = predict_next_day_knn(sensors, k=k, selection_method=sel, weighting=w)
+                truev, predv = predict_next_day_knn_with_neighbors(sensors, neigh_idx, k=k, selection_method=sel, weighting=w)
                 m = mae(truev, predv)
                 r = rmse(truev, predv)
                 resultsK[k] = {
@@ -173,6 +292,7 @@ def test_geo_distance_effect(sensors, k=5, thresholds=[5,15,30,60], selection_me
             "n_points": len(true_vals)
         }
     return out
+
 
 
 
