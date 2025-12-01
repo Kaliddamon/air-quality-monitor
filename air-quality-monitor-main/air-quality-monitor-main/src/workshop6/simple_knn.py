@@ -17,7 +17,7 @@ def knn_pollution(sensors, query_id=None, query_vector=None, k=5, use_average=Fa
             raise ValueError("Pasa query_id o query_vector")
         query = None
         for s in sensors:
-            if s["id"] == query_id:
+            if s["_id"] == query_id:
                 query = s
                 break
         if query is None:
@@ -45,10 +45,11 @@ def knn_pollution(sensors, query_id=None, query_vector=None, k=5, use_average=Fa
     # filtrar out self si query_id dado
     filtered = []
     for score, s in results:
-        if query_id is not None and s["id"] == query_id:
+        if query_id is not None and s["_id"] == query_id:
             continue
         filtered.append((score, s))
         if len(filtered) >= k:
             break
     return filtered
+
 
