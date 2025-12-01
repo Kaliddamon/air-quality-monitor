@@ -50,7 +50,13 @@ def testMapReduce(input_data, worker_configs):
         
     # Asegurarnos de que df no esté vacío
     if df.empty:
-        return pd.DataFrame()
+        return {
+            "chart_data" : pd.DataFrame(),
+            "counts" : pd.DataFrame(counts),
+            "averages" : pd.DataFrames(averages),
+            "max_city" : max_city,
+            "min_city" : min_city
+        }
         
     # Obtener tiempos como lista (convertir la Series a lista)
     serial_time = df["Serial time (s)"].iloc[0]
