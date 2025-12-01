@@ -10,6 +10,7 @@ from prediction import run_all_and_alert
 from w2_pipeline import run_w2_from_records
 from w3_pipeline import run_w3_from_records, plot_markov_chain
 from w4_pipeline import run_w4_from_records
+from w6_pipeline import run_w6_from_records
 import matplotlib.pyplot as plt   #plt for charts w4
 import numpy as np   #needed for w4 heatmap
 
@@ -354,7 +355,7 @@ if st.button("Ejecutar análisis W3"):
 # w4
 # ---------------------------------------------------------
 st.markdown("---")
-st.subheader("Análisis avanzado W4 (K-Means, anomalías y similitud entre ciudades)")
+st.subheader("Análisis avanzado W4 (MapReduce)")
 
 if st.button("Ejecutar análisis W4"):
     w4_data = run_w4_from_records(records)
@@ -389,12 +390,58 @@ if st.button("Ejecutar análisis W4"):
     chart_data = w4_data.get("chart_data")
     st.bar_chart(chart_data)
 
+# ---------------------------------------------------------
+# w6
+# ---------------------------------------------------------
+st.markdown("---")
+st.subheader("Análisis avanzado W6 (KNN)")
+
+if st.button("Ejecutar análisis W6"):
+    city = st.selectbox("Selecciona una ciudad a analizar", all_cities)
+
+    if city:
+        df_knn = df.copy()
+        df_knn = df_knn[df_knn["sensorLocation"].isin(city)]
+        _id = st.selectbox(f"Selecciona uno de los sensores de la ciudad {city}", df_knn["_id"])
+
+        w6_data = run_w6_from_records(records, qid)
+
+        st.write("KNN Pollution")
+
+        knn_pollution = w6_data.get("simple_knn")
+        print(knn_pollution)
+        st.dataframe(knn_pollution, use_container_width=True, height=250)
+    
+        st.write("KNN Geographic")
+    
+        geographic_knn = w6_data.get("geographic_knn")
+        print(geographic_knn)
+        st.dataframe(geographic_knn, use_container_width=True, height=250)
+
+        st.write("KNN Alert")
+    
+        alert_knn = w6_data.get("alert_knn")
+        print(alert_knn)
+        st.dataframe(alert_knn, use_container_width=True, height=250)
+
+        st.write("KNN Performance")
+
+        perf = w6_data.get("perf")
+        print(perf)
+        st.json(perf)
+
+        st.write("Similarity by geographic distance")
+
+        geo_effect = w6_data.get("geo_effect")
+        print(geo_effect)
+        st.json(geo_effect)
     
     
 
     
 
     
+
 
 
 
