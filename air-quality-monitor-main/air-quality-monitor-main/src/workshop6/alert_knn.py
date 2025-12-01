@@ -1,3 +1,5 @@
+from workshop6.utils import *
+
 def knn_alert(sensors, query_id=None, k=5, w_alert=100.0, w_weather=1.0, w_aqi=0.5):
     """
     score compuesto:
@@ -50,3 +52,4 @@ def knn_alert(sensors, query_id=None, k=5, w_alert=100.0, w_weather=1.0, w_aqi=0
 
     results.sort(key=lambda x: x[0])
     return results[:k]
+
