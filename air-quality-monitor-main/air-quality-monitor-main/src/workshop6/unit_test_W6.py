@@ -47,7 +47,7 @@ def generate_sample_sensors(n=20, seed=42):
 def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
     query = {}
     for s in sensors:
-        if s["_id"] = qid:
+        if s["_id"] == qid:
             query = s
     
     print("Sensor consulta id:", qid)
@@ -98,6 +98,7 @@ def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
     print(perf)
     
     return pd.DataFrame(simple_knn), pd.DataFrame(geographic_knn), pd.DataFrame(alert_knn), perf, geo_effect
+
 
 
 
