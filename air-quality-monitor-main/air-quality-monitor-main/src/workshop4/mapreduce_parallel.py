@@ -737,10 +737,6 @@ def measure_parallel(records, num_map=2, num_reduce=2, num_shuffle=2):
     print("Promedio AQI por ciudad (paralelo, 1 reduce):", par_avg)
     max_city_p, min_city_p = city_with_max_min(par_avg)
     print(f"Mayor (paralelo): {max_city_p}, Menor (paralelo): {min_city_p}")
-
-    # Parallel: mapreduce for city sensor counts
-    par_sensors = parallel_mapreduce(records, map_city_sensors, reduce_sum, num_map_tasks=num_map, num_shuffle_tasks=num_shuffle, num_reduce_tasks=num_reduce)
-    print("Sensores por ciudad (paralelo):", par_sensors)
     t1 = time.time()
     return t1 - t0
 
@@ -754,22 +750,22 @@ def run_benchmark(input_data, worker_configs):
     # medir serial
     serial_time, counts, averages, max_city, min_city = measure_serial(input_data)
 
-    # for (m, r, s) in worker_configs:
-    #     parallel_time = measure_parallel(input_data, m, r, s)
+    for (m, r, s) in worker_configs:
+        parallel_time = measure_parallel(input_data, m, r, s)
 
-    #     speedup = serial_time / parallel_time
-    #     efficiency = speedup / (m + r + s)
+        speedup = serial_time / parallel_time
+        efficiency = speedup / (m + r + s)
 
-    #     results.append({
-    #         "Map workers": m,
-    #         "Reduce workers": r,
-    #         "Shuffle workers": s,
-    #         "Total workers": m + r,
-    #         "Serial time (s)": serial_time,
-    #         "Parallel time (s)": parallel_time,
-    #         "Speedup": speedup,
-    #         "Efficiency": efficiency,
-    #     })
+        results.append({
+            "Map workers": m,
+            "Reduce workers": r,
+            "Shuffle workers": s,
+            "Total workers": m + r + s,
+            "Serial time (s)": serial_time,
+            "Parallel time (s)": parallel_time,
+            "Speedup": speedup,
+            "Efficiency": efficiency,
+        })
 
     return pd.DataFrame(results), counts, averages, max_city, min_city
 
