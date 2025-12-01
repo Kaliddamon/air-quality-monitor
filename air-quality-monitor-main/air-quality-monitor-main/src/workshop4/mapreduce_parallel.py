@@ -704,12 +704,12 @@ def measure_serial(records):
     # Algoritmo 2: promedio AQI por ciudad (serial)
     mapped2 = map_avg_aqi(records)
     shuffled2 = shuffle(mapped2)
-    averages = reduce_avg_aqi(shuffled2)
+    df_averages, averages = reduce_avg_aqi(shuffled2)
     print("Promedio AQI por ciudad (serial):", averages)
     max_city, min_city = city_with_max_min(averages)
     print(f"Mayor: {max_city}, Menor: {min_city}")
     t1 = time.time()
-    return t1 - t0, counts, averages, max_city, min_city
+    return t1 - t0, counts, df_averages, max_city, min_city
 
 def measure_parallel(records, num_map=2, num_reduce=2, num_shuffle=2):
     t0 = time.time()
