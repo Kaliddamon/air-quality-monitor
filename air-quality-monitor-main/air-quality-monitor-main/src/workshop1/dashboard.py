@@ -362,12 +362,12 @@ if st.button("Ejecutar análisis W4"):
     st.write("Drones por ciudad")
 
     counts = w4_data.get("counts")
-    st.dataframe(pd.DataFrame([].append(counts)), use_container_width=True, height=250)
+    st.dataframe(pd.DataFrame(counts), use_container_width=True, height=250)
 
     st.write("Promedio de AQI por ciudad")
 
     averages = w4_data.get("averages")
-    st.dataframe(pd.DataFrame([].append(averages)), use_container_width=True, height=250)
+    st.dataframe(pd.DataFrame(averages), use_container_width=True, height=250)
 
     col1, col2 = st.columns(2)
 
@@ -393,6 +393,7 @@ if st.button("Ejecutar análisis W4"):
     
 
     
+
 
 
 
