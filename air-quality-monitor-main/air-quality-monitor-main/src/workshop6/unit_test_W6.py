@@ -46,7 +46,7 @@ def generate_sample_sensors(n=20, seed=42):
     return sensors
 
 
-def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
+def testKNN(sensors, qid, k = 3, thresholds = [5, 10, 20, 40]):
     query = {}
     for s in sensors:
         if s["_id"] == qid:
@@ -59,7 +59,7 @@ def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
 
     # Algorithm 1: Simple KNN (euclidiana sobre los 7 días)
     print("=== Algorithm 1: Simple KNN (Euclidean sobre 7 días) ===")
-    neighbors1 = knn_pollution(sensors, query_id=qid, k=5, use_average=False)
+    neighbors1 = knn_pollution(sensors, query_id=qid, k=k, use_average=False)
     simple_knn = []
     for score, s in neighbors1:
         print(f"id:{s['_id']} score:{score:.2f} avg:{mean_vector(s['pollutionLevels7']):.2f}")
@@ -69,7 +69,7 @@ def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
         })
 
     print("\n=== Algorithm 2: Geographic KNN (mismo tipo geográfico preferido) ===")
-    neighbors2 = knn_geographic(sensors, query_id=qid, k=5)
+    neighbors2 = knn_geographic(sensors, query_id=qid, k=k)
     geographic_knn = []
     for score, s in neighbors2:
         print(f"id:{s['_id']} score:{score:.2f} type:{s['geographicType']} coords:{s['coords']} source:{s['pollutionSource']}")
@@ -79,7 +79,7 @@ def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
         })
 
     print("\n=== Algorithm 3: Alert KNN (event matching por estado/alert y clima) ===")
-    neighbors3 = knn_alert(sensors, query_id=qid, k=5)
+    neighbors3 = knn_alert(sensors, query_id=qid, k=k)
     alert_knn = []
     for score, s in neighbors3:
         print(f"id:{s['_id']} score:{score:.2f} state:{s['airQualityState']} alert:{s['alertIssued']} weather:{s['weatherInfluence']} aqi:{s['aqiValue']}")
@@ -102,7 +102,7 @@ def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
     
     print(">>> Starting evaluate_knn_performance")
     try:
-        perf = evaluate_knn_performance(sensors, ks=ks, selection_methods=selection_methods, weightings=weightings)
+        perf = evaluate_knn_performance(sensors, k=k, selection_methods=selection_methods, weightings=weightings)
         print(">>> evaluate_knn_performance finished")
         print(perf)
     except Exception as e:
@@ -114,7 +114,7 @@ def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
     print(">>> Starting test_geo_distance_effect")
     try:
         neigh_idx = build_neighbors_index(sensors, max_k=20)
-        geo_effect = test_geo_distance_effect_optimized(sensors, neigh_idx, k=5, thresholds=[5,15,30,60], weighting='pollution_distance')
+        geo_effect = test_geo_distance_effect_optimized(sensors, neigh_idx, k=k, thresholds=[5,15,30,60], weighting='pollution_distance')
         print(">>> test_geo_distance_effect finished")
         print(geo_effect)
     except Exception as e:
@@ -122,6 +122,7 @@ def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
         print(">>> test_geo_distance_effect raised:", e)
     
     return pd.DataFrame(simple_knn), pd.DataFrame(geographic_knn), pd.DataFrame(alert_knn), perf, geo_effect
+
 
 
 
