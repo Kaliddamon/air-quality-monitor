@@ -226,15 +226,14 @@ def evaluate_knn_performance(sensors, k=3, selection_methods=['pollution','geogr
         for w in weightings:
             resultsK = {}
             # We can compute for each k using the SAME neighbors index
-            for k in ks:
-                truev, predv = predict_next_day_knn_with_neighbors(sensors, neigh_idx, k=k, selection_method=sel, weighting=w)
-                m = mae(truev, predv)
-                r = rmse(truev, predv)
-                resultsK[k] = {
-                    "MAE": m,
-                    "RMSE": r,
-                    "n_points": len(truev)
-                }
+            truev, predv = predict_next_day_knn_with_neighbors(sensors, neigh_idx, k=k, selection_method=sel, weighting=w)
+            m = mae(truev, predv)
+            r = rmse(truev, predv)
+            resultsK[f"K vecinos: {k}"] = {
+                "MAE": m,
+                "RMSE": r,
+                "n_points": len(truev)
+            }
             resultsWeight[w] = resultsK
         resultsSel[sel] = resultsWeight
 
@@ -313,12 +312,13 @@ def test_geo_distance_effect_optimized(sensors, neighbors_index, k=5, thresholds
             true_vals.append(true_val)
             pred_vals.append(pred)
 
-        out[th] = {
+        out[f"Límite de distancia: {th}"] = {
             "MAE": mae(true_vals, pred_vals),
             "RMSE": rmse(true_vals, pred_vals),
             "n_points": len(true_vals)
         }
     return out
+
 
 
 
