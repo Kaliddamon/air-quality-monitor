@@ -94,14 +94,12 @@ def reduce_count_reads(shuffled):
     """
     df = []
     for k, values in shuffled.items():
-        total = {}
         s = 0
         for val in values:
             s += val
-        total[k] = s
         df.append({
             "Ciudad": k,
-            "Conteo": total.get(k)
+            "Conteo": s,
         })
     return df
 
@@ -152,7 +150,7 @@ def reduce_avg_aqi(shuffled):
             averages[k] = float('nan')
         df.append({
             "Ciudad": k,
-            "Promedio": average.get(k)
+            "Promedio": average.get(k),
         })
     return df, averages
 
