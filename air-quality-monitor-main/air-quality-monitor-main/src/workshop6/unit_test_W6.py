@@ -87,17 +87,39 @@ def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
         })
 
     # === Algorithm 4: evaluar rendimiento KNN ===
-    add_next_day_pollution(sensors, seed=777)
     selection_methods = ['pollution', 'geographic']
     weightings = ['uniform', 'pollution_distance', 'geo_distance']
-    perf = evaluate_knn_performance(sensors, ks=ks, selection_methods=selection_methods, weightings=weightings)
-    print(perf)
+
+    print(">>> Starting Algorithm 4: add_next_day_pollution")
+    try:
+        add_next_day_pollution(sensors, seed=777)
+        print(">>> add_next_day_pollution finished")
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        print(">>> add_next_day_pollution raised:", e)
+    
+    print(">>> Starting evaluate_knn_performance")
+    try:
+        perf = evaluate_knn_performance(sensors, ks=ks, selection_methods=selection_methods, weightings=weightings)
+        print(">>> evaluate_knn_performance finished")
+        print(perf)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        print(">>> evaluate_knn_performance raised:", e)
+
     
     # Probar efecto de distancia geográfica (umbral)
-    geo_effect = test_geo_distance_effect(sensors, k=5, thresholds=thresholds, selection_method='pollution', weighting='pollution_distance')
-    print(perf)
+    print(">>> Starting test_geo_distance_effect")
+    try:
+        geo_effect = test_geo_distance_effect(sensors, k=5, thresholds=thresholds, selection_method='pollution', weighting='pollution_distance')
+        print(">>> test_geo_distance_effect finished")
+        print(geo_effect)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        print(">>> test_geo_distance_effect raised:", e)
     
     return pd.DataFrame(simple_knn), pd.DataFrame(geographic_knn), pd.DataFrame(alert_knn), perf, geo_effect
+
 
 
 
