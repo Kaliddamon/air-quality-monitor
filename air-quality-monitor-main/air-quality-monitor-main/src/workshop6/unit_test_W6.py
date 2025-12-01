@@ -60,7 +60,7 @@ def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
     neighbors1 = knn_pollution(sensors, query_id=qid, k=5, use_average=False)
     simple_knn = []
     for score, s in neighbors1:
-        print(f"id:{s['id']} score:{score:.2f} avg:{mean_vector(s['pollutionLevels7']):.2f}")
+        print(f"id:{s['_id']} score:{score:.2f} avg:{mean_vector(s['pollutionLevels7']):.2f}")
         simple_knn.append({
             "Ciudad": s["sensorLocation"],
             "Score": score
@@ -70,7 +70,7 @@ def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
     neighbors2 = knn_geographic(sensors, query_id=qid, k=5)
     geographic_knn = []
     for score, s in neighbors2:
-        print(f"id:{s['id']} score:{score:.2f} type:{s['geographicType']} coords:{s['coords']} source:{s['pollutionSource']}")
+        print(f"id:{s['_id']} score:{score:.2f} type:{s['geographicType']} coords:{s['coords']} source:{s['pollutionSource']}")
         geographic_knn.append({
             "Ciudad": s["sensorLocation"],
             "Score": score
@@ -80,7 +80,7 @@ def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
     neighbors3 = knn_alert(sensors, query_id=qid, k=5)
     alert_knn = []
     for score, s in neighbors3:
-        print(f"id:{s['id']} score:{score:.2f} state:{s['airQualityState']} alert:{s['alertIssued']} weather:{s['weatherInfluence']} aqi:{s['aqiValue']}")
+        print(f"id:{s['_id']} score:{score:.2f} state:{s['airQualityState']} alert:{s['alertIssued']} weather:{s['weatherInfluence']} aqi:{s['aqiValue']}")
         alert_knn.append({
             "Ciudad": s["sensorLocation"],
             "Score": score
@@ -98,6 +98,7 @@ def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
     print(perf)
     
     return pd.DataFrame(simple_knn), pd.DataFrame(geographic_knn), pd.DataFrame(alert_knn), perf, geo_effect
+
 
 
 
