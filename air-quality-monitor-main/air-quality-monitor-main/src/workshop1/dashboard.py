@@ -358,7 +358,15 @@ st.markdown("---")
 st.subheader("Análisis avanzado W4 (MapReduce)")
 
 if st.button("Ejecutar análisis W4"):
-    w4_data = run_w4_from_records(records)
+
+    st.write("Escoge la cantidad de workers para el Map Reduce Paralelo")
+    m = st.number_input("Map Workers", value=3, placeholder="Cantidad de map workers", min_value=1, max_value=15)
+    r = st.number_input("Reduce Workers", value=3, placeholder="Cantidad de reduce workers", min_value=1, max_value=15)
+    s = st.number_input("Shuffle Workers", value=3, placeholder="Cantidad de shuffle workers", min_value=1, max_value=15)
+
+    workers_config = (m, r, s)
+    
+    w4_data = run_w4_from_records(records, workers_config)
 
     st.write("Drones por ciudad")
 
@@ -441,6 +449,7 @@ st.json(geo_effect)
     
 
     
+
 
 
 
