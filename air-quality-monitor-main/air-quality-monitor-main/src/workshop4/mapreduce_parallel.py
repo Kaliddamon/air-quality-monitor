@@ -162,7 +162,7 @@ def city_with_max_min(averages):
     if not averages:
         return (("N/A", float('nan')), ("N/A", float('nan')))
     # Encontrar max y min manualmente
-    primer_elemento = averages.get(0)
+    primer_elemento = averages[0]
     ciudad = primer_elemento.get("Ciudad")
     promedio = primer_elemento.get("Promedio")
     
