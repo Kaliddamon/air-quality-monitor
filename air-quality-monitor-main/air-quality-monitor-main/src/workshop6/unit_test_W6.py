@@ -1,3 +1,8 @@
+from workshop6.simple_knn import knn_pollution
+from workshop6.geographic_knn import knn_geographic
+from workshop6.alert_knn import knn_alert
+
+
 def generate_sample_sensors(n=20, seed=42):
     random.seed(seed)
     sensors = []
@@ -76,3 +81,4 @@ def testKNN(sensors, qid):
         })
 
     return pd.DataFrame(simple_knn), pd.DataFrame(geographic_knn), pd.DataFrame(alert_knn)
+
