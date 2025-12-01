@@ -359,11 +359,6 @@ st.subheader("Análisis avanzado W4 (K-Means, anomalías y similitud entre ciuda
 if st.button("Ejecutar análisis W4"):
     w4_data = run_w4_from_records(records)
 
-    st.write("Gráfico de barras (Comparación Map Reduce Serial y Paralelo):")
-
-    chart_data = w4_data.get("chart_data")
-    st.bar_chart(chart_data)
-
     st.write("Drones por ciudad")
 
     counts = w4_data.get("counts")
@@ -371,8 +366,8 @@ if st.button("Ejecutar análisis W4"):
 
     st.write("Promedio de AQI por ciudad")
 
-    average = w4_data.get("average")
-    st.dataframe(pd.DataFrame([].append(average)), use_container_width=True, height=250)
+    averages = w4_data.get("averages")
+    st.dataframe(pd.DataFrame([].append(averages)), use_container_width=True, height=250)
 
     col1, col2 = st.columns(2)
 
@@ -387,12 +382,18 @@ if st.button("Ejecutar análisis W4"):
         st.subheader("Menor")
         st.metric(min_city[0], f"{min_city[1]:.2f}" if min_city[1] is not None else "N/D")
 
+    st.write("Gráfico de barras (Comparación Map Reduce Serial y Paralelo):")
+
+    chart_data = w4_data.get("chart_data")
+    st.bar_chart(chart_data)
+
     
     
 
     
 
     
+
 
 
 
