@@ -38,12 +38,7 @@ def generate_sample_sensors(n=20, seed=42):
     return sensors
 
 
-if __name__ == "__main__":
-    sensors = generate_sample_sensors(n=30, seed=123)
-
-    # Elige un sensor de consulta
-    query = sensors[0]
-    qid = query["id"]
+def testKNN(sensors, qid):
     print("Sensor consulta id:", qid)
     print("GeographicType:", query["geographicType"], "PollSource:", query["pollutionSource"])
     print("AQI:", query["aqiValue"], "State:", query["airQualityState"], "AlertIssued:", query["alertIssued"])
@@ -52,22 +47,32 @@ if __name__ == "__main__":
     # Algorithm 1: Simple KNN (euclidiana sobre los 7 días)
     print("=== Algorithm 1: Simple KNN (Euclidean sobre 7 días) ===")
     neighbors1 = knn_pollution(sensors, query_id=qid, k=5, use_average=False)
+    simple_knn = []
     for score, s in neighbors1:
         print(f"id:{s['id']} score:{score:.2f} avg:{mean_vector(s['pollutionLevels7']):.2f}")
-
-    print()
-    # También con comparación por promedio
-    print("=== Algorithm 1b: Simple KNN (comparar medias) ===")
-    neighbors1b = knn_pollution(sensors, query_id=qid, k=5, use_average=True)
-    for score, s in neighbors1b:
-        print(f"id:{s['id']} delta_media:{score:.2f} media:{mean_vector(s['pollutionLevels7']):.2f}")
+        simple_knn.append({
+            "Ciudad": s["sensorLocation"]
+            "Score": score
+        })
 
     print("\n=== Algorithm 2: Geographic KNN (mismo tipo geográfico preferido) ===")
     neighbors2 = knn_geographic(sensors, query_id=qid, k=5)
+    geographic_knn = []
     for score, s in neighbors2:
         print(f"id:{s['id']} score:{score:.2f} type:{s['geographicType']} coords:{s['coords']} source:{s['pollutionSource']}")
+        geographic_knn.append({
+            "Ciudad": s["sensorLocation"]
+            "Score": score
+        })
 
     print("\n=== Algorithm 3: Alert KNN (event matching por estado/alert y clima) ===")
     neighbors3 = knn_alert(sensors, query_id=qid, k=5)
+    alert_knn = []
     for score, s in neighbors3:
         print(f"id:{s['id']} score:{score:.2f} state:{s['airQualityState']} alert:{s['alertIssued']} weather:{s['weatherInfluence']} aqi:{s['aqiValue']}")
+        alert_knn.append({
+            "Ciudad": s["sensorLocation"]
+            "Score": score
+        })
+
+    return pd.DataFrame(simple_knn), pd.DataFrame(geographic_knn), pd.DataFrame(alert_knn)
