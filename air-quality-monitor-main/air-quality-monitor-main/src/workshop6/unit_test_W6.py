@@ -111,7 +111,8 @@ def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
     # Probar efecto de distancia geográfica (umbral)
     print(">>> Starting test_geo_distance_effect")
     try:
-        geo_effect = test_geo_distance_effect(sensors, k=5, thresholds=thresholds, selection_method='pollution', weighting='pollution_distance')
+        neigh_idx = build_neighbors_index(sensors, max_k=20)
+        geo_effect = test_geo_distance_effect_optimized(sensors, neigh_idx, k=5, thresholds=[5,15,30,60], weighting='pollution_distance')
         print(">>> test_geo_distance_effect finished")
         print(geo_effect)
     except Exception as e:
@@ -119,6 +120,7 @@ def testKNN(sensors, qid, ks = [1, 3, 5, 7], thresholds = [5, 10, 20, 40]):
         print(">>> test_geo_distance_effect raised:", e)
     
     return pd.DataFrame(simple_knn), pd.DataFrame(geographic_knn), pd.DataFrame(alert_knn), perf, geo_effect
+
 
 
 
