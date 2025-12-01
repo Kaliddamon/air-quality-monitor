@@ -357,12 +357,41 @@ st.markdown("---")
 st.subheader("Análisis avanzado W4 (K-Means, anomalías y similitud entre ciudades)")
 
 if st.button("Ejecutar análisis W4"):
+    w4_data = run_w4_from_records(records)
 
-    #cluster labels
     st.write("Gráfico de barras (Comparación Map Reduce Serial y Paralelo):")
 
-    chart_data = run_w4_from_records(records)
+    chart_data = w4_data.get("chart_data")
     st.bar_chart(chart_data)
+
+    st.write("Drones por ciudad")
+
+    counts = w4_data.get("counts")
+    st.dataframe(pd.DataFrame([].append(counts)), use_container_width=True, height=250)
+
+    st.write("Promedio de AQI por ciudad")
+
+    average = w4_data.get("average")
+    st.dataframe(pd.DataFrame([].append(average)), use_container_width=True, height=250)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Mayor")
+        st.metric("Mayor", f"{w4_data.get("max_city"):.2f}" if pm.get("max_city") is not None else "N/D")
+    
+    with col2:
+        st.subheader("Menor")
+        pm = global_stats.get("PM25", {})
+        st.metric("Menor", f"{w4_data.get("min_city"):.2f}" if pm.get("min_city") is not None else "N/D")
+
+    
+    
+
+    
+
+    
+
 
 
 
