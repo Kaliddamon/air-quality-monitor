@@ -402,7 +402,7 @@ df_knn = df.copy()
 df_knn = df_knn[df_knn["sensorLocation"].isin([city])]
 _id = st.selectbox(f"Selecciona uno de los sensores de la ciudad {city}", df_knn["_id"])
 
-k = st.number_input("Hallar k vecinos", value=int, placeholder="Define a 'k'", min_value=1, max_value=15)
+k = st.number_input("Hallar k vecinos", value=3, placeholder="Define a 'k'", min_value=1, max_value=15)
 
 w6_data = run_w6_from_records(records, _id, k)
 
@@ -441,6 +441,7 @@ st.json(geo_effect)
     
 
     
+
 
 
 
