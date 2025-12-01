@@ -3,6 +3,8 @@ from workshop6.alert_knn import knn_alert
 from workshop6.geographic_knn import knn_geographic
 from workshop6.simple_knn import knn_pollution
 
+import random
+
 def add_next_day_pollution(sensors, seed=999):
     random.seed(seed)
     for s in sensors:
@@ -171,6 +173,7 @@ def test_geo_distance_effect(sensors, k=5, thresholds=[5,15,30,60], selection_me
             "n_points": len(true_vals)
         }
     return out
+
 
 
 
