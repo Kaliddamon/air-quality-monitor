@@ -1,6 +1,7 @@
 from workshop6.simple_knn import knn_pollution
 from workshop6.geographic_knn import knn_geographic
 from workshop6.alert_knn import knn_alert
+from workshop6.performance_knn import *
 
 
 def generate_sample_sensors(n=20, seed=42):
@@ -80,5 +81,19 @@ def testKNN(sensors, qid):
             "Score": score
         })
 
-    return pd.DataFrame(simple_knn), pd.DataFrame(geographic_knn), pd.DataFrame(alert_knn)
+    # === Algorithm 4: evaluar rendimiento KNN ===
+    add_next_day_pollution(sensors, seed=777)
+    ks = [1, 3, 5, 7]
+    selection_methods = ['pollution', 'geographic']
+    weightings = ['uniform', 'pollution_distance', 'geo_distance']
+    perf = evaluate_knn_performance(sensors, ks=ks, selection_methods=selection_methods, weightings=weightings)
+    print(perf)
+    
+    # Probar efecto de distancia geográfica (umbral)
+    thresholds = [5, 10, 20, 40]
+    geo_effect = test_geo_distance_effect(sensors, k=5, thresholds=thresholds, selection_method='pollution', weighting='pollution_distance')
+    print(perf)
+    
+    return pd.DataFrame(simple_knn), pd.DataFrame(geographic_knn), pd.DataFrame(alert_knn), perf, geo_effect
+
 
