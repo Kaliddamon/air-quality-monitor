@@ -1,3 +1,5 @@
+from workshop6.utils import *
+
 def knn_geographic(sensors, query_id=None, k=5, weight_type_penalty=200.0, weight_source=50.0, weight_coord=1.0):
     """
     Distancia compuesta:
@@ -31,3 +33,4 @@ def knn_geographic(sensors, query_id=None, k=5, weight_type_penalty=200.0, weigh
         results.append((score, s))
     results.sort(key=lambda x: x[0])
     return results[:k]
+
