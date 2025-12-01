@@ -127,10 +127,12 @@ def test_geo_distance_effect(sensors, k=5, thresholds=[5,15,30,60], selection_me
     aquellos con coord distance <= threshold. Si un sensor no tiene vecinos en el umbral,
     lo excluye.
     """
-    out = []
+    out = {}
     for th in thresholds:
         true_vals = []
         pred_vals = []
+
+
         for s in sensors:
             qid = s["id"]
             neigh = knn_pollution(sensors, query_id=qid, k=20, use_average=False)  # obtener muchos candidatos
@@ -163,13 +165,13 @@ def test_geo_distance_effect(sensors, k=5, thresholds=[5,15,30,60], selection_me
             pred = sum(w*v for w,v in combined) / total_w
             true_vals.append(s.get("nextDayPollution"))
             pred_vals.append(pred)
-        out.append({
-            "geo_threshold": th,
+        out[th] = {
             "MAE": mae(true_vals, pred_vals),
             "RMSE": rmse(true_vals, pred_vals),
             "n_points": len(true_vals)
-        })
+        }
     return out
+
 
 
 
