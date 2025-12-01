@@ -11,7 +11,7 @@ def knn_geographic(sensors, query_id=None, k=5, weight_type_penalty=200.0, weigh
         raise ValueError("Necesito query_id para knn_geographic")
     query = None
     for s in sensors:
-        if s["id"] == query_id:
+        if s["_id"] == query_id:
             query = s
             break
     if query is None:
@@ -23,7 +23,7 @@ def knn_geographic(sensors, query_id=None, k=5, weight_type_penalty=200.0, weigh
 
     results = []
     for s in sensors:
-        if s["id"] == query_id:
+        if s["_id"] == query_id:
             continue
         penalty = 0.0 if s["geographicType"] == q_type else 1.0
         coord_d = dist2d(q_coords, s["coords"])
@@ -33,4 +33,5 @@ def knn_geographic(sensors, query_id=None, k=5, weight_type_penalty=200.0, weigh
         results.append((score, s))
     results.sort(key=lambda x: x[0])
     return results[:k]
+
 
