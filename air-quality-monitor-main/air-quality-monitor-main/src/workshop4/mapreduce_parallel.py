@@ -63,7 +63,7 @@ def testMapReduce(input_data, worker_configs):
     parallel_times = df["Parallel time (s)"].tolist()
         
     # Etiquetas: "Serial" y luego "<m+r> workers" por cada fila
-    labels = ["Serial"] + [f"{m+r} workers" for m, r in zip(df["Map workers"], df["Reduce workers"])]
+    labels = ["Serial"] + [f"{m+r+s} workers" for m, r, s in zip(df["Map workers"], df["Reduce workers"], df["Shuffle workers"])]
         
     # Construir DataFrame con índice = labels y una columna 'Time (s)'
     chart_data = pd.DataFrame({"Time (s)": [serial_time] + parallel_times}, index=labels)
