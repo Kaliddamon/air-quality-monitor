@@ -133,6 +133,7 @@ def reduce_avg_aqi(shuffled):
     Devuelve {ciudad: promedio}
     """
     df = []
+    averages = {}
     for k, vals in shuffled.items():    # Bucle (k, vals), se gestiona por las keys 
         average = {}
         total = 0.0
@@ -142,10 +143,12 @@ def reduce_avg_aqi(shuffled):
             count += 1
         if count > 0:
             average[k] = total / count
+            averages[k] = total / count
         else:
             average[k] = float('nan')
+            averages[k] = float('nan')
         df.append(average)
-    return df
+    return df, averages
 
 def city_with_max_min(averages):
     """
