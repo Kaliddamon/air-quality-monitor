@@ -396,50 +396,50 @@ if st.button("Ejecutar análisis W4"):
 st.markdown("---")
 st.subheader("Análisis avanzado W6 (KNN)")
 
-if st.button("Ejecutar análisis W6"):
-    city = st.selectbox("Selecciona una ciudad a analizar", all_cities)
+city = st.selectbox("Selecciona una ciudad a analizar", all_cities)
 
-    df_knn = df.copy()
-    df_knn = df_knn[df_knn["sensorLocation"].isin([city])]
-    _id = st.selectbox(f"Selecciona uno de los sensores de la ciudad {city}", df_knn["_id"])
+df_knn = df.copy()
+df_knn = df_knn[df_knn["sensorLocation"].isin([city])]
+_id = st.selectbox(f"Selecciona uno de los sensores de la ciudad {city}", df_knn["_id"])
 
-    w6_data = run_w6_from_records(records, _id)
+w6_data = run_w6_from_records(records, _id)
 
-    st.write("KNN Pollution")
+st.write("KNN Pollution")
 
-    knn_pollution = w6_data.get("simple_knn")
-    print(knn_pollution)
-    st.dataframe(knn_pollution, use_container_width=True, height=250)
+knn_pollution = w6_data.get("simple_knn")
+print(knn_pollution)
+st.dataframe(knn_pollution, use_container_width=True, height=250)
 
-    st.write("KNN Geographic")
+st.write("KNN Geographic")
 
-    geographic_knn = w6_data.get("geographic_knn")
-    print(geographic_knn)
-    st.dataframe(geographic_knn, use_container_width=True, height=250)
+geographic_knn = w6_data.get("geographic_knn")
+print(geographic_knn)
+st.dataframe(geographic_knn, use_container_width=True, height=250)
 
-    st.write("KNN Alert")
+st.write("KNN Alert")
 
-    alert_knn = w6_data.get("alert_knn")
-    print(alert_knn)
-    st.dataframe(alert_knn, use_container_width=True, height=250)
+alert_knn = w6_data.get("alert_knn")
+print(alert_knn)
+st.dataframe(alert_knn, use_container_width=True, height=250)
 
-    st.write("KNN Performance")
+st.write("KNN Performance")
 
-    perf = w6_data.get("perf")
-    print(perf)
-    st.json(perf)
+perf = w6_data.get("perf")
+print(perf)
+st.json(perf)
 
-    st.write("Similarity by geographic distance")
+st.write("Similarity by geographic distance")
 
-    geo_effect = w6_data.get("geo_effect")
-    print(geo_effect)
-    st.json(geo_effect)
+geo_effect = w6_data.get("geo_effect")
+print(geo_effect)
+st.json(geo_effect)
     
     
 
     
 
     
+
 
 
 
