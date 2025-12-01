@@ -101,22 +101,24 @@ def predict_next_day_knn(sensors, k=5, selection_method='pollution', weighting='
     return true_vals, pred_vals
 
 def evaluate_knn_performance(sensors, ks=[1,3,5,7], selection_methods=['pollution','geographic'], weightings=['uniform','pollution_distance','geo_distance']):
-    results = []
+    resultsSel = {}
     for sel in selection_methods:
+        resultsWeight = {}
         for w in weightings:
+            resultsK = {}
             for k in ks:
                 truev, predv = predict_next_day_knn(sensors, k=k, selection_method=sel, weighting=w)
                 m = mae(truev, predv)
                 r = rmse(truev, predv)
-                results.append({
-                    "selection": sel,
-                    "weighting": w,
-                    "k": k,
+                resultsK[k] = {
                     "MAE": m,
                     "RMSE": r,
                     "n_points": len(truev)
-                })
-    return results
+                }
+            resultsWeight[w] = resultsK
+        resultsSel[sel] = resultsWeight
+
+    return resultsSel
 
 def test_geo_distance_effect(sensors, k=5, thresholds=[5,15,30,60], selection_method='pollution', weighting='uniform'):
     """
@@ -168,6 +170,7 @@ def test_geo_distance_effect(sensors, k=5, thresholds=[5,15,30,60], selection_me
             "n_points": len(true_vals)
         })
     return out
+
 
 
 
