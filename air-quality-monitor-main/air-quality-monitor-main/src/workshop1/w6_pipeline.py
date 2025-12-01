@@ -1,6 +1,6 @@
 from workshop6.unit_test_W6 import testKNN
 
-def run_w6_from_records(records, qid):
+def run_w6_from_records(records, qid, k):
     
     simple_knn, geographic_knn, alert_knn, perf, geo_effect = testKNN(records, qid)
 
