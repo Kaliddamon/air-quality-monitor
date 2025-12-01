@@ -1,3 +1,5 @@
+from workshop6.utils import *
+
 # --------------------------
 # Algorithm 1: Basic Pollution Similarity (Simple KNN)
 # - usa Euclidean sobre vectores de 7 días, o compara medias si use_average=True
@@ -49,3 +51,4 @@ def knn_pollution(sensors, query_id=None, query_vector=None, k=5, use_average=Fa
         if len(filtered) >= k:
             break
     return filtered
+
