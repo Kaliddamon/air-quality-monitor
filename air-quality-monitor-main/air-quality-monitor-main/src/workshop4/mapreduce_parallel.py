@@ -748,22 +748,22 @@ def run_benchmark(input_data, worker_configs):
     # medir serial
     serial_time, counts, averages, max_city, min_city = measure_serial(input_data)
 
-    for (m, r, s) in worker_configs:
-        parallel_time = measure_parallel(input_data, m, r, s)
+    # for (m, r, s) in worker_configs:
+    #     parallel_time = measure_parallel(input_data, m, r, s)
 
-        speedup = serial_time / parallel_time
-        efficiency = speedup / (m + r + s)
+    #     speedup = serial_time / parallel_time
+    #     efficiency = speedup / (m + r + s)
 
-        results.append({
-            "Map workers": m,
-            "Reduce workers": r,
-            "Shuffle workers": s,
-            "Total workers": m + r,
-            "Serial time (s)": serial_time,
-            "Parallel time (s)": parallel_time,
-            "Speedup": speedup,
-            "Efficiency": efficiency,
-        })
+    #     results.append({
+    #         "Map workers": m,
+    #         "Reduce workers": r,
+    #         "Shuffle workers": s,
+    #         "Total workers": m + r,
+    #         "Serial time (s)": serial_time,
+    #         "Parallel time (s)": parallel_time,
+    #         "Speedup": speedup,
+    #         "Efficiency": efficiency,
+    #     })
 
     return pd.DataFrame(results), counts, averages, max_city, min_city
 
