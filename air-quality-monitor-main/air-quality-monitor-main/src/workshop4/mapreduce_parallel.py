@@ -92,13 +92,15 @@ def reduce_count_reads(shuffled):
     Reduce: suma los 1s por ubicación -> total de lecturas.
     Devuelve un diccionario {ubicacion: total}
     """
-    totals = {}
+    df = []
     for k, values in shuffled.items():
+        total = {}
         s = 0
         for val in values:
             s += val
-        totals[k] = s
-    return totals
+        total[k] = s
+        df.append(total)
+    return df
 
 def top_n_sensors(counts, n=10):
     """
@@ -130,18 +132,20 @@ def reduce_avg_aqi(shuffled):
     Reduce: calcula promedio por ciudad.
     Devuelve {ciudad: promedio}
     """
-    averages = {}
+    df = []
     for k, vals in shuffled.items():    # Bucle (k, vals), se gestiona por las keys 
+        average = {}
         total = 0.0
         count = 0
         for v in vals:        # Bucle para recorrer todos los valores 'vals' de la key 'k'
             total += v
             count += 1
         if count > 0:
-            averages[k] = total / count
+            average[k] = total / count
         else:
-            averages[k] = float('nan')
-    return averages
+            average[k] = float('nan')
+        df.append(average)
+    return df
 
 def city_with_max_min(averages):
     """
