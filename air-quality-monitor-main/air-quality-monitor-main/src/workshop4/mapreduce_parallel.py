@@ -99,10 +99,10 @@ def reduce_count_reads(shuffled):
         for val in values:
             s += val
         total[k] = s
-        df.append(
+        df.append({
             "Ciudad": k,
             "Conteo": total.get(k)
-        )
+        })
     return df
 
 def top_n_sensors(counts, n=10):
