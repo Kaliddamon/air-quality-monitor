@@ -11,7 +11,7 @@ def knn_alert(sensors, query_id=None, k=5, w_alert=100.0, w_weather=1.0, w_aqi=0
         raise ValueError("Necesito query_id para knn_alert")
     query = None
     for s in sensors:
-        if s["id"] == query_id:
+        if s["_id"] == query_id:
             query = s
             break
     if query is None:
@@ -30,7 +30,7 @@ def knn_alert(sensors, query_id=None, k=5, w_alert=100.0, w_weather=1.0, w_aqi=0
 
     results = []
     for s in sensors:
-        if s["id"] == query_id:
+        if s["_id"] == query_id:
             continue
         # Alert/State penalty: prefer mismos eventos
         state_penalty = 0.0 if s["airQualityState"] == q_state else 1.0
@@ -52,4 +52,5 @@ def knn_alert(sensors, query_id=None, k=5, w_alert=100.0, w_weather=1.0, w_aqi=0
 
     results.sort(key=lambda x: x[0])
     return results[:k]
+
 
