@@ -56,6 +56,27 @@ def main():
         if not isinstance(rec.get("alertIssued"), bool):
             rec["alertIssued"] = bool(random.getrandbits(1))
 
+        #3.3 geographicType
+        if not isinstance(rec.get("geographicType"), str):
+            geo_types = ["urban", "suburban", "rural"]
+            rec["geographicType"] = random.choice(geo_types)
+
+        #3.4 pollutionSource
+        if not isinstance(rec.get("pollutionSource"), str):
+            pollution_sources = ["traffic", "industrial", "mixed"]
+            rec["pollutionSource"] = random.choice(pollution_sources)
+
+        #3.5 coords
+        if not isinstance(rec.get("coords"), tuple):
+            x = random.uniform(0, 100)
+            y = random.uniform(0, 100)
+            rec["coords"] = (x, y)
+
+        #3.6 pollution levels 7 days
+        if not isinstance(rec.get("pollutionLevels7"), list):
+            pollution_levels = [round(random.uniform(10, 150), 2) for _ in range(7)]
+            rec["pollutionLevels7"] = pollution_levels
+
     #save cleaned data
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -66,3 +87,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
