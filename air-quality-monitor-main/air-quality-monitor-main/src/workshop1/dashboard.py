@@ -35,7 +35,6 @@ def build_hashtable(path: str, last_modified: float):
 def get_file_mtime(path: str):
     return os.path.getmtime(path) if os.path.exists(path) else None
 
-@st.cache_data(show_spinner=False)
 def cached_run_w2(mtime):
     ht = build_hashtable(DATA_PATH, mtime)
     return run_w2_from_records(ht.all_records)
@@ -439,3 +438,4 @@ with reset_col2:
             # fallback: instruct user to restart app if clear not available
             st.warning("No se pudo invalidar programáticamente la cache. Reinicia la app si necesitas recargar datos.")
         st.experimental_rerun()
+
