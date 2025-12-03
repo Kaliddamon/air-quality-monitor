@@ -50,9 +50,9 @@ def cached_run_w4(mtime, workers_config):
     return run_w4_from_records(ht.all_records, workers_config)
 
 @st.cache_data(show_spinner=False)
-def cached_run_w6(mtime, sensor_id, k):
+def cached_run_w6(mtime, sensor, k):
     ht = build_hashtable(DATA_PATH, mtime)
-    return run_w6_from_records(ht.all_records, sensor_id, k)
+    return run_w6_from_records(ht.all_records, sensor, k)
 
 @st.cache_data(show_spinner=False)
 def cached_run_predictions(mtime):
@@ -439,5 +439,6 @@ with reset_col2:
             # fallback: instruct user to restart app if clear not available
             st.warning("No se pudo invalidar programáticamente la cache. Reinicia la app si necesitas recargar datos.")
         st.experimental_rerun()
+
 
 
