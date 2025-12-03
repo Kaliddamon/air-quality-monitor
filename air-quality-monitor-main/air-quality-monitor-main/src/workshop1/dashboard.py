@@ -382,19 +382,20 @@ with w6_placeholder.container():
     df_knn = df[df["sensorLocation"].isin([city])] if not df.empty else pd.DataFrame()
     sensor_choices = list(df_knn["_id"].unique()) if not df_knn.empty else []
     _id = st.selectbox(f"Selecciona uno de los sensores de la ciudad {city}", sensor_choices, index=0 if sensor_choices else None)
+    sensor = ht.search(_id)
     k = st.number_input("Hallar k vecinos", value=3, min_value=1, max_value=15)
 
     if st.button("Ejecutar W6 (KNN)", key="btn_w6"):
         st.session_state["run_w6"] = True
-        st.session_state["w6_params"] = {"_id": _id, "k": k}
+        st.session_state["w6_params"] = {"sensor": sensor, "k": k}
 
     if st.session_state.get("run_w6"):
-        params = st.session_state.get("w6_params", {"_id": _id, "k": k})
-        if not params.get("_id"):
+        params = st.session_state.get("w6_params", {"sensor": sensor, "k": k})
+        if not params.get("sensor"):
             st.warning("Selecciona un sensor válido para ejecutar KNN.")
         else:
             with st.spinner("Ejecutando W6..."):
-                w6_data = cached_run_w6(file_mtime, params["_id"], params["k"])
+                w6_data = cached_run_w6(file_mtime, params["sensor"], params["k"])
 
             st.write("KNN Pollution")
             knn_pollution = w6_data.get("simple_knn")
@@ -438,4 +439,5 @@ with reset_col2:
             # fallback: instruct user to restart app if clear not available
             st.warning("No se pudo invalidar programáticamente la cache. Reinicia la app si necesitas recargar datos.")
         st.experimental_rerun()
+
 
