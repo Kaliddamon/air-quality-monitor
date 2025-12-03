@@ -1,21 +1,14 @@
 from workshop6.utils import *
 
-def knn_alert(sensors, query_id=None, k=5, w_alert=100.0, w_weather=1.0, w_aqi=0.5):
+def knn_alert(sensors, query=None, k=5, w_alert=100.0, w_weather=1.0, w_aqi=0.5):
     """
     score compuesto:
       - Si mismo airQualityState o mismo alertIssued -> menor penalización
       - Distancia en condiciones meteorológicas (normalizado por rangos típicos)
       - Diferencia de aqiValue (normalizada)
     """
-    if query_id is None:
-        raise ValueError("Necesito query_id para knn_alert")
-    query = None
-    for s in sensors:
-        if s["_id"] == query_id:
-            query = s
-            break
     if query is None:
-        raise ValueError("query_id no encontrado")
+        raise ValueError("Se necesita query para knn_alert")
 
     q_state = query["airQualityState"]
     q_alert = query["alertIssued"]
@@ -52,5 +45,6 @@ def knn_alert(sensors, query_id=None, k=5, w_alert=100.0, w_weather=1.0, w_aqi=0
 
     results.sort(key=lambda x: x[0])
     return results[:k]
+
 
 
