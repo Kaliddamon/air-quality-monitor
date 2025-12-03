@@ -10,6 +10,7 @@ def knn_geographic(sensors, query, k=5, weight_type_penalty=200.0, weight_source
     if query is None:
         raise ValueError("Necesito query para knn_geographic")
 
+    query_id = query["_id"]
     q_type = query["geographicType"]
     q_coords = query["coords"]
     q_source_code = encode_source(query["pollutionSource"])
@@ -26,6 +27,7 @@ def knn_geographic(sensors, query, k=5, weight_type_penalty=200.0, weight_source
         results.append((score, s))
     results.sort(key=lambda x: x[0])
     return results[:k]
+
 
 
 
