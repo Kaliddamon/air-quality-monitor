@@ -46,20 +46,15 @@ def generate_sample_sensors(n=20, seed=42):
     return sensors
 
 
-def testKNN(sensors, qid, k = 3, thresholds = [5, 10, 20, 40]):
-    query = {}
-    for s in sensors:
-        if s["_id"] == qid:
-            query = s
+def testKNN(sensors, query, k = 3, thresholds = [5, 10, 20, 40]):
     
-    print("Sensor consulta id:", qid)
     print("GeographicType:", query["geographicType"], "PollSource:", query["pollutionSource"])
     print("AQI:", query["aqiValue"], "State:", query["airQualityState"], "AlertIssued:", query["alertIssued"])
     print()
 
     # Algorithm 1: Simple KNN (euclidiana sobre los 7 días)
     print("=== Algorithm 1: Simple KNN (Euclidean sobre 7 días) ===")
-    neighbors1 = knn_pollution(sensors, query_id=qid, k=k, use_average=False)
+    neighbors1 = knn_pollution(sensors, query, k=k, use_average=False)
     simple_knn = []
     for score, s in neighbors1:
         print(f"id:{s['_id']} score:{score:.2f} avg:{mean_vector(s['pollutionLevels7']):.2f}")
@@ -69,7 +64,7 @@ def testKNN(sensors, qid, k = 3, thresholds = [5, 10, 20, 40]):
         })
 
     print("\n=== Algorithm 2: Geographic KNN (mismo tipo geográfico preferido) ===")
-    neighbors2 = knn_geographic(sensors, query_id=qid, k=k)
+    neighbors2 = knn_geographic(sensors, query, k=k)
     geographic_knn = []
     for score, s in neighbors2:
         print(f"id:{s['_id']} score:{score:.2f} type:{s['geographicType']} coords:{s['coords']} source:{s['pollutionSource']}")
@@ -79,7 +74,7 @@ def testKNN(sensors, qid, k = 3, thresholds = [5, 10, 20, 40]):
         })
 
     print("\n=== Algorithm 3: Alert KNN (event matching por estado/alert y clima) ===")
-    neighbors3 = knn_alert(sensors, query_id=qid, k=k)
+    neighbors3 = knn_alert(sensors, query, k=k)
     alert_knn = []
     for score, s in neighbors3:
         print(f"id:{s['_id']} score:{score:.2f} state:{s['airQualityState']} alert:{s['alertIssued']} weather:{s['weatherInfluence']} aqi:{s['aqiValue']}")
@@ -122,6 +117,7 @@ def testKNN(sensors, qid, k = 3, thresholds = [5, 10, 20, 40]):
         print(">>> test_geo_distance_effect raised:", e)
     
     return pd.DataFrame(simple_knn), pd.DataFrame(geographic_knn), pd.DataFrame(alert_knn), perf, geo_effect
+
 
 
 
