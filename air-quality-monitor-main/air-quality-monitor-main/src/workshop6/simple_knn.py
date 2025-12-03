@@ -4,7 +4,7 @@ from workshop6.utils import *
 # Algorithm 1: Basic Pollution Similarity (Simple KNN)
 # - usa Euclidean sobre vectores de 7 días, o compara medias si use_average=True
 # --------------------------
-def knn_pollution(sensors, query_id=None, query_vector=None, k=5, use_average=False):
+def knn_pollution(sensors, query, k=5, use_average=False):
     """
     sensors: lista de dict con clave 'pollutionLevels7'
     query_id: si se pasa, tomará ese sensor como consulta
@@ -12,17 +12,12 @@ def knn_pollution(sensors, query_id=None, query_vector=None, k=5, use_average=Fa
     k: número de vecinos
     use_average: si True compara absolutos de medias en lugar de euclidiana
     """
-    if query_vector is None:
-        if query_id is None:
-            raise ValueError("Pasa query_id o query_vector")
-        query = None
-        for s in sensors:
-            if s["_id"] == query_id:
-                query = s
-                break
-        if query is None:
-            raise ValueError("query_id no encontrado")
-        query_vector = query["pollutionLevels7"]
+
+    if query is None:
+        raise ValueError("query no encontrado")
+
+    query_id = query["_id"]
+    query_vector = query["pollutionLevels7"]
 
     results = []
     if use_average:
@@ -51,5 +46,6 @@ def knn_pollution(sensors, query_id=None, query_vector=None, k=5, use_average=Fa
         if len(filtered) >= k:
             break
     return filtered
+
 
 
