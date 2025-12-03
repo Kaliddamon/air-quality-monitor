@@ -401,13 +401,25 @@ with w6_placeholder.container():
             knn_pollution = w6_data.get("simple_knn")
             st.dataframe(knn_pollution, use_container_width=True, height=250)
 
+            st.latex(r'''Score = Distancia Euclidiana
+$$
+d(x, y) = \sqrt{(x-y)^2}
+$$
+\( x \): Índice de calidad del aire (Elemento del vector real)
+\( y \): Índice de calidad del aire (Elemento del vector por comparar)''')
+
             st.write("KNN Geographic")
             geographic_knn = w6_data.get("geographic_knn")
             st.dataframe(geographic_knn, use_container_width=True, height=250)
 
+            st.latex(r'''\text{score} ;=; \text{penalización por tipo geográfico} ;+; \text{distancia euclidiana entre coordenadas} ;+; \text{diferencia codificada de la fuente de contaminación}.''')
+            
+
             st.write("KNN Alert")
             alert_knn = w6_data.get("alert_knn")
             st.dataframe(alert_knn, use_container_width=True, height=250)
+
+            st.latex(r'''\( \text{score} = \) penalización por estado/alerta + distancia meteorológica normalizada (suma de fracciones) + diferencia de AQI normalizada.''')
 
             st.write("KNN Performance")
             perf = w6_data.get("perf")
@@ -439,6 +451,7 @@ with reset_col2:
             # fallback: instruct user to restart app if clear not available
             st.warning("No se pudo invalidar programáticamente la cache. Reinicia la app si necesitas recargar datos.")
         st.experimental_rerun()
+
 
 
 
