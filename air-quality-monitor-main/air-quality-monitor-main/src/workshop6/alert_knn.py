@@ -10,6 +10,7 @@ def knn_alert(sensors, query=None, k=5, w_alert=100.0, w_weather=1.0, w_aqi=0.5)
     if query is None:
         raise ValueError("Se necesita query para knn_alert")
 
+    query_id = query["_id"]
     q_state = query["airQualityState"]
     q_alert = query["alertIssued"]
     q_weather = query["weatherInfluence"]
@@ -45,6 +46,7 @@ def knn_alert(sensors, query=None, k=5, w_alert=100.0, w_weather=1.0, w_aqi=0.5)
 
     results.sort(key=lambda x: x[0])
     return results[:k]
+
 
 
 
